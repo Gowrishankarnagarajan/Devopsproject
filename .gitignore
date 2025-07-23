@@ -1,2 +1,9 @@
 .terraform 
-
+.terraform.tfstate
+.terraform.tfstate.backup   
+.terraform.lock.hcl
+.terraform/modules
+.terraform/environment
+.terraform/plugins
+.terraform/workspaces
+.terraform.tfvars
