@@ -1,3 +1,4 @@
+
 resource "random_string" "suffix" {
   length  = 6
   special = false
@@ -34,15 +35,15 @@ resource "azurerm_servicebus_namespace" "sb_namespace" {
 }
 
 resource "azurerm_servicebus_queue" "ingestion_queue" {
-  name                = "ingestion-queue"
-  namespace_id        = azurerm_servicebus_namespace.sb_namespace.id
-  partitioning_enabled = false
+  name         = "ingestion-queue"
+  namespace_id = azurerm_servicebus_namespace.sb_namespace.id
+  # FIX: 'partitioning_enabled' is not a supported argument for azurerm_servicebus_queue in provider version 3.64.0. Removed.
 }
 
 resource "azurerm_servicebus_queue" "workflow_queue" {
-  name                = "workflow-queue"
-  namespace_id        = azurerm_servicebus_namespace.sb_namespace.id
-  partitioning_enabled = false
+  name         = "workflow-queue"
+  namespace_id = azurerm_servicebus_namespace.sb_namespace.id
+  # FIX: 'partitioning_enabled' is not a supported argument for azurerm_servicebus_queue in provider version 3.64.0. Removed.
 }
 
 resource "azurerm_cosmosdb_account" "cosmosdb_mongodb" {
@@ -51,7 +52,7 @@ resource "azurerm_cosmosdb_account" "cosmosdb_mongodb" {
   resource_group_name = azurerm_resource_group.rg.name
   offer_type          = "Standard"
   kind                = "MongoDB"
-  
+
   consistency_policy {
     consistency_level = "Session"
   }
@@ -68,7 +69,7 @@ resource "azurerm_cosmosdb_account" "cosmosdb_workflow" {
   resource_group_name = azurerm_resource_group.rg.name
   offer_type          = "Standard"
   kind                = "GlobalDocumentDB"
-  
+
   consistency_policy {
     consistency_level = "Session"
   }
@@ -86,7 +87,7 @@ resource "azurerm_redis_cache" "redis_cache" {
   capacity            = 1
   family              = "C"
   sku_name            = "Basic"
-  non_ssl_port_enabled = false
+  # FIX: 'non_ssl_port_enabled' is not a supported argument for azurerm_redis_cache in provider version 3.64.0. Removed.
   minimum_tls_version = "1.2"
 }
 
@@ -122,7 +123,6 @@ resource "azurerm_key_vault_access_policy" "github_actions_sp_policy" {
   ]
   # You can add other permissions (e.g., "Get", "List" for keys/certificates) if needed
 }
-
 
 resource "azurerm_key_vault_secret" "example_secret" {
   name         = "ExampleSecret"
