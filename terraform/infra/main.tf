@@ -1,4 +1,3 @@
-
 resource "random_string" "suffix" {
   length  = 6
   special = false
@@ -17,6 +16,13 @@ resource "azurerm_log_analytics_workspace" "logs" {
   resource_group_name = azurerm_resource_group.rg.name
   sku                 = "PerGB2018"
   retention_in_days   = 30
+  # FIX: Removed 'data_collection_rule_id' from ignore_changes as it's not a supported attribute
+  # for azurerm_log_analytics_workspace in provider version 3.64.0.
+  lifecycle {
+    ignore_changes = [
+      # data_collection_rule_id, # Removed this line
+    ]
+  }
 }
 
 resource "azurerm_container_registry" "acr" {
@@ -128,4 +134,8 @@ resource "azurerm_key_vault_secret" "example_secret" {
   name         = "ExampleSecret"
   value        = "my-super-secret-value"
   key_vault_id = azurerm_key_vault.key_vault.id
+  # FIX: Added explicit dependency on the access policy to ensure it's applied first.
+  depends_on = [
+    azurerm_key_vault_access_policy.github_actions_sp_policy
+  ]
 }

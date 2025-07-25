@@ -1,4 +1,3 @@
-# Assuming this is in a separate output.tf file, but included here for completeness.
 
 output "cosmosdb_mongodb_connection_string" {
   description = "The connection string for the MongoDB Cosmos DB account."
