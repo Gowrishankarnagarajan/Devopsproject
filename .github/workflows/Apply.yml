@@ -65,24 +65,33 @@ jobs:
         id: logs_output
         run: |
           set -euo pipefail
-          FULL_COMMAND_OUTPUT=$(terraform -chdir=terraform/infra output -raw log_analytics_workspace_id 2>&1)
-          LOG_ID=$(echo "$FULL_COMMAND_OUTPUT" | grep -oE '[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}' | head -n 1)
+          # Debugging: Print the raw output for Log Analytics Workspace ID
+          RAW_LOG_ID_OUTPUT=$(terraform -chdir=terraform/infra output -raw log_analytics_workspace_id 2>&1)
+          echo "::debug::Raw Log Analytics Workspace ID Output: '$RAW_LOG_ID_OUTPUT'"
+          LOG_ID=$(echo "$RAW_LOG_ID_OUTPUT" | grep -oE '[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}' | head -n 1)
+          echo "::debug::Extracted Log Analytics Workspace ID: '$LOG_ID'"
           printf "log_analytics_workspace_id=%s\n" "$LOG_ID" >> "$GITHUB_OUTPUT"
 
       - name: Get Resource Group Name
         id: rg_output
         run: |
           set -euo pipefail
-          FULL_COMMAND_OUTPUT=$(terraform -chdir=terraform/infra output -raw resource_group_name 2>&1)
-          RG_NAME=$(echo "$FULL_COMMAND_OUTPUT" | head -n 1 | tr -d '\r')
+          # Debugging: Print the raw output for Resource Group Name
+          RAW_RG_NAME_OUTPUT=$(terraform -chdir=terraform/infra output -raw resource_group_name 2>&1)
+          echo "::debug::Raw Resource Group Name Output: '$RAW_RG_NAME_OUTPUT'"
+          RG_NAME=$(echo "$RAW_RG_NAME_OUTPUT" | head -n 1 | tr -d '\r')
+          echo "::debug::Extracted Resource Group Name: '$RG_NAME'"
           printf "resource_group_name=%s\n" "$RG_NAME" >> "$GITHUB_OUTPUT"
 
       - name: Get Location
         id: location_output
         run: |
           set -euo pipefail
-          FULL_COMMAND_OUTPUT=$(terraform -chdir=terraform/infra output -raw location 2>&1)
-          LOCATION=$(echo "$FULL_COMMAND_OUTPUT" | head -n 1 | tr -d '\r')
+          # Debugging: Print the raw output for Location
+          RAW_LOCATION_OUTPUT=$(terraform -chdir=terraform/infra output -raw location 2>&1)
+          echo "::debug::Raw Location Output: '$RAW_LOCATION_OUTPUT'"
+          LOCATION=$(echo "$RAW_LOCATION_OUTPUT" | head -n 1 | tr -d '\r')
+          echo "::debug::Extracted Location: '$LOCATION'"
           printf "location=%s\n" "$LOCATION" >> "$GITHUB_OUTPUT"
 
       - name: Get Service Bus Namespace Name & Connection String
@@ -119,28 +128,44 @@ jobs:
         id: cosmosdb_workflow_output
         run: |
           set -euo pipefail
-          CONNECTION_STRING=$(terraform -chdir=terraform/infra output -raw cosmosdb_workflow_connection_string 2>&1 | head -n 1 | tr -d '\r')
+          # Debugging: Print the raw output for Workflow connection string
+          RAW_CONNECTION_STRING=$(terraform -chdir=terraform/infra output -raw cosmosdb_workflow_connection_string 2>&1)
+          echo "::debug::Raw Cosmos DB Workflow Connection String Output: '$RAW_CONNECTION_STRING'"
+          CONNECTION_STRING=$(echo "$RAW_CONNECTION_STRING" | head -n 1 | tr -d '\r')
+          echo "::debug::Extracted Cosmos DB Workflow Connection String: '$CONNECTION_STRING'"
           printf "cosmosdb_workflow_connection_string=%s\n" "$CONNECTION_STRING" >> "$GITHUB_OUTPUT"
 
       - name: Get Redis Cache Connection String
         id: redis_output
         run: |
           set -euo pipefail
-          CONNECTION_STRING=$(terraform -chdir=terraform/infra output -raw redis_connection_string 2>&1 | head -n 1 | tr -d '\r')
+          # Debugging: Print the raw output for Redis connection string
+          RAW_CONNECTION_STRING=$(terraform -chdir=terraform/infra output -raw redis_connection_string 2>&1)
+          echo "::debug::Raw Redis Connection String Output: '$RAW_CONNECTION_STRING'"
+          CONNECTION_STRING=$(echo "$RAW_CONNECTION_STRING" | head -n 1 | tr -d '\r')
+          echo "::debug::Extracted Redis Connection String: '$CONNECTION_STRING'"
           printf "redis_connection_string=%s\n" "$CONNECTION_STRING" >> "$GITHUB_OUTPUT"
 
       - name: Get Application Insights Connection String
         id: appinsights_output
         run: |
           set -euo pipefail
-          CONNECTION_STRING=$(terraform -chdir=terraform/infra output -raw application_insights_connection_string 2>&1 | head -n 1 | tr -d '\r')
+          # Debugging: Print the raw output for Application Insights connection string
+          RAW_CONNECTION_STRING=$(terraform -chdir=terraform/infra output -raw application_insights_connection_string 2>&1)
+          echo "::debug::Raw Application Insights Connection String Output: '$RAW_CONNECTION_STRING'"
+          CONNECTION_STRING=$(echo "$RAW_CONNECTION_STRING" | head -n 1 | tr -d '\r')
+          echo "::debug::Extracted Application Insights Connection String: '$CONNECTION_STRING'"
           printf "application_insights_connection_string=%s\n" "$CONNECTION_STRING" >> "$GITHUB_OUTPUT"
 
       - name: Get Key Vault URI
         id: keyvault_output
         run: |
           set -euo pipefail
-          KEY_VAULT_URI=$(terraform -chdir=terraform/infra output -raw key_vault_uri 2>&1 | head -n 1 | tr -d '\r')
+          # Debugging: Print the raw output for Key Vault URI
+          RAW_KEY_VAULT_URI=$(terraform -chdir=terraform/infra output -raw key_vault_uri 2>&1)
+          echo "::debug::Raw Key Vault URI Output: '$RAW_KEY_VAULT_URI'"
+          KEY_VAULT_URI=$(echo "$RAW_KEY_VAULT_URI" | head -n 1 | tr -d '\r')
+          echo "::debug::Extracted Key Vault URI: '$KEY_VAULT_URI'"
           printf "key_vault_uri=%s\n" "$KEY_VAULT_URI" >> "$GITHUB_OUTPUT"
       # --- End Output Retrieval Steps ---
 
@@ -235,7 +260,7 @@ jobs:
       - name: Build & Push Drone Scheduler Image
         id: push_drone_scheduler
         run: |
-          set -euxo pipefail
+          set -euo pipefail
           IMAGE_NAME="${{ env.ACR_LOGIN_SERVER }}/drone-scheduler:latest"
           if [ ! -f "./sourcecode/drone-scheduler/Dockerfile" ]; then
             echo "::error::Dockerfile not found for drone-scheduler at: ./sourcecode/drone-scheduler/Dockerfile"
@@ -248,7 +273,7 @@ jobs:
       - name: Build & Push Delivery Image
         id: push_delivery
         run: |
-          set -euxo pipefail
+          set -euo pipefail
           IMAGE_NAME="${{ env.ACR_LOGIN_SERVER }}/delivery:latest"
           if [ ! -f "./sourcecode/delivery/Dockerfile" ]; then
             echo "::error::Dockerfile not found for delivery at: ./sourcecode/delivery/Dockerfile"
@@ -293,9 +318,9 @@ jobs:
             -var="servicebus_connection_string=${{ needs.provision-infra.outputs.servicebus_connection_string }}" \
             -var="cosmosdb_mongodb_connection_string=${{ needs.provision-infra.outputs.cosmosdb_mongodb_connection_string }}" \
             -var="cosmosdb_workflow_connection_string=${{ needs.provision-infra.outputs.cosmosdb_workflow_connection_string }}" \
-            -var="redis_connection_string=${{ needs.provision-infra.outputs.redis_connection_string }}" \
-            -var="application_insights_connection_string=${{ needs.provision-infra.outputs.application_insights_connection_string }}" \
-            -var="key_vault_uri=${{ needs.provision-infra.outputs.key_vault_uri }}" \
+            -var="redis_connection_string=${{ needs.redis_output.outputs.redis_connection_string }}" \
+            -var="application_insights_connection_string=${{ needs.appinsights_output.outputs.application_insights_connection_string }}" \
+            -var="key_vault_uri=${{ needs.keyvault_output.outputs.key_vault_uri }}" \
             -var="ingestion_image=${{ needs.build-and-push-images.outputs.ingestion_image }}" \
             -var="workflow_image=${{ needs.build-and-push-images.outputs.workflow_image }}" \
             -var="package_image=${{ needs.build-and-push-images.outputs.package_image }}" \
