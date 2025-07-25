@@ -50,15 +50,39 @@ jobs:
         id: acr_output
         run: |
           set -euo pipefail
+          # Capture all output (stdout and stderr) from the direct binary execution.
+          # We explicitly use "$TERRAFORM_CLI_PATH"/terraform-bin to ensure we're running
+          # the core executable, not a shell alias or wrapper that might add extra text.
           FULL_COMMAND_OUTPUT=$("$TERRAFORM_CLI_PATH"/terraform-bin -chdir=terraform/infra output -raw acr_login_server 2>&1)
+          # Debug: Print the full raw output captured from the command.
+          echo "::debug::FULL_COMMAND_OUTPUT captured: '$FULL_COMMAND_OUTPUT'"
+          # Extract the ACR login server using grep with a regular expression.
+          # -oE: Prints only the matched parts, extended regex.
+          # '[a-zA-Z0-9.-]+\.azurecr\.io': This regex specifically matches domain names
+          #    ending in '.azurecr.io', which is the expected format for ACR login servers.
+          # head -n 1: Ensures only the first match is taken, in case multiple lines
+          #    contain similar patterns (highly unlikely for this specific output).
           ACR_NAME=$(echo "$FULL_COMMAND_OUTPUT" | grep -oE '[a-zA-Z0-9.-]+\.azurecr\.io' | head -n 1)
+          # Debug: Print the extracted ACR_NAME after regex filtering.
+          echo "::debug::ACR_NAME extracted after regex: '$ACR_NAME'"
+          # Write the key-value pair to GITHUB_OUTPUT.
+          # Using printf for explicit newline control is generally safer.
+          # We are no longer adding quotes here, as the regex should provide a clean value,
+          # and adding quotes might cause issues with GitHub Actions' internal parsing
+          # if it expects a raw string.
           printf "acr_login_server=%s\n" "$ACR_NAME" >> "$GITHUB_OUTPUT"
+          # Debug: Show the exact content that was written to GITHUB_OUTPUT file.
+          echo "::debug::Content written to GITHUB_OUTPUT file:"
+          cat "$GITHUB_OUTPUT"
+
+      - name: Debug ACR Login Server
+        run: echo "::notice::ACR is ${{ steps.acr_output.outputs.acr_login_server }}"
 
       - name: Get Log Analytics Workspace ID
         id: logs_output
         run: |
           set -euo pipefail
-          FULL_COMMAND_OUTPUT=$("$TERRAFORM_CLI_PATH"/terraform-bin -chdir=terraform/infra output -raw log_analytics_workspace_id 2>&1)
+          FULL_COMMAND_OUTPUT=$(terraform -chdir=terraform/infra output -raw log_analytics_workspace_id 2>&1)
           LOG_ID=$(echo "$FULL_COMMAND_OUTPUT" | grep -oE '[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}' | head -n 1)
           printf "log_analytics_workspace_id=%s\n" "$LOG_ID" >> "$GITHUB_OUTPUT"
 
@@ -66,7 +90,7 @@ jobs:
         id: rg_output
         run: |
           set -euo pipefail
-          FULL_COMMAND_OUTPUT=$("$TERRAFORM_CLI_PATH"/terraform-bin -chdir=terraform/infra output -raw resource_group_name 2>&1)
+          FULL_COMMAND_OUTPUT=$(terraform -chdir=terraform/infra output -raw resource_group_name 2>&1)
           RG_NAME=$(echo "$FULL_COMMAND_OUTPUT" | head -n 1 | tr -d '\r')
           printf "resource_group_name=%s\n" "$RG_NAME" >> "$GITHUB_OUTPUT"
 
@@ -74,7 +98,7 @@ jobs:
         id: location_output
         run: |
           set -euo pipefail
-          FULL_COMMAND_OUTPUT=$("$TERRAFORM_CLI_PATH"/terraform-bin -chdir=terraform/infra output -raw location 2>&1)
+          FULL_COMMAND_OUTPUT=$(terraform -chdir=terraform/infra output -raw location 2>&1)
           LOCATION=$(echo "$FULL_COMMAND_OUTPUT" | head -n 1 | tr -d '\r')
           printf "location=%s\n" "$LOCATION" >> "$GITHUB_OUTPUT"
 
@@ -82,8 +106,8 @@ jobs:
         id: servicebus_output
         run: |
           set -euo pipefail
-          NAMESPACE_NAME=$("$TERRAFORM_CLI_PATH"/terraform-bin -chdir=terraform/infra output -raw servicebus_namespace_name 2>&1 | head -n 1 | tr -d '\r')
-          CONNECTION_STRING=$("$TERRAFORM_CLI_PATH"/terraform-bin -chdir=terraform/infra output -raw servicebus_connection_string 2>&1 | head -n 1 | tr -d '\r')
+          NAMESPACE_NAME=$(terraform -chdir=terraform/infra output -raw servicebus_namespace_name 2>&1 | head -n 1 | tr -d '\r')
+          CONNECTION_STRING=$(terraform -chdir=terraform/infra output -raw servicebus_connection_string 2>&1 | head -n 1 | tr -d '\r')
           printf "servicebus_namespace_name=%s\n" "$NAMESPACE_NAME" >> "$GITHUB_OUTPUT"
           printf "servicebus_connection_string=%s\n" "$CONNECTION_STRING" >> "$GITHUB_OUTPUT"
 
@@ -91,35 +115,35 @@ jobs:
         id: cosmosdb_mongodb_output
         run: |
           set -euo pipefail
-          CONNECTION_STRING=$("$TERRAFORM_CLI_PATH"/terraform-bin -chdir=terraform/infra output -raw cosmosdb_mongodb_connection_string 2>&1 | head -n 1 | tr -d '\r')
+          CONNECTION_STRING=$(terraform -chdir=terraform/infra output -raw cosmosdb_mongodb_connection_string 2>&1 | head -n 1 | tr -d '\r')
           printf "cosmosdb_mongodb_connection_string=%s\n" "$CONNECTION_STRING" >> "$GITHUB_OUTPUT"
 
       - name: Get Cosmos DB Workflow Connection String
         id: cosmosdb_workflow_output
         run: |
           set -euo pipefail
-          CONNECTION_STRING=$("$TERRAFORM_CLI_PATH"/terraform-bin -chdir=terraform/infra output -raw cosmosdb_workflow_connection_string 2>&1 | head -n 1 | tr -d '\r')
+          CONNECTION_STRING=$(terraform -chdir=terraform/infra output -raw cosmosdb_workflow_connection_string 2>&1 | head -n 1 | tr -d '\r')
           printf "cosmosdb_workflow_connection_string=%s\n" "$CONNECTION_STRING" >> "$GITHUB_OUTPUT"
 
       - name: Get Redis Cache Connection String
         id: redis_output
         run: |
           set -euo pipefail
-          CONNECTION_STRING=$("$TERRAFORM_CLI_PATH"/terraform-bin -chdir=terraform/infra output -raw redis_connection_string 2>&1 | head -n 1 | tr -d '\r')
+          CONNECTION_STRING=$(terraform -chdir=terraform/infra output -raw redis_connection_string 2>&1 | head -n 1 | tr -d '\r')
           printf "redis_connection_string=%s\n" "$CONNECTION_STRING" >> "$GITHUB_OUTPUT"
 
       - name: Get Application Insights Connection String
         id: appinsights_output
         run: |
           set -euo pipefail
-          CONNECTION_STRING=$("$TERRAFORM_CLI_PATH"/terraform-bin -chdir=terraform/infra output -raw application_insights_connection_string 2>&1 | head -n 1 | tr -d '\r')
+          CONNECTION_STRING=$(terraform -chdir=terraform/infra output -raw application_insights_connection_string 2>&1 | head -n 1 | tr -d '\r')
           printf "application_insights_connection_string=%s\n" "$CONNECTION_STRING" >> "$GITHUB_OUTPUT"
 
       - name: Get Key Vault URI
         id: keyvault_output
         run: |
           set -euo pipefail
-          KEY_VAULT_URI=$("$TERRAFORM_CLI_PATH"/terraform-bin -chdir=terraform/infra output -raw key_vault_uri 2>&1 | head -n 1 | tr -d '\r')
+          KEY_VAULT_URI=$(terraform -chdir=terraform/infra output -raw key_vault_uri 2>&1 | head -n 1 | tr -d '\r')
           printf "key_vault_uri=%s\n" "$KEY_VAULT_URI" >> "$GITHUB_OUTPUT"
       # --- End Output Retrieval Steps ---
 
@@ -130,6 +154,7 @@ jobs:
           echo "::notice::Resource Group Name: ${{ steps.rg_output.outputs.resource_group_name }}"
           echo "::notice::Location: ${{ steps.location_output.outputs.location }}"
           echo "::notice::Service Bus Namespace Name: ${{ steps.servicebus_output.outputs.servicebus_namespace_name }}"
+          echo "::notice::Service Bus Connection String: ${{ steps.servicebus_output.outputs.servicebus_connection_string }}"
           echo "::notice::Cosmos DB MongoDB Connection String: ${{ steps.cosmosdb_mongodb_output.outputs.cosmosdb_mongodb_connection_string }}"
           echo "::notice::Cosmos DB Workflow Connection String: ${{ steps.cosmosdb_workflow_output.outputs.cosmosdb_workflow_connection_string }}"
           echo "::notice::Redis Connection String: ${{ steps.redis_output.outputs.redis_connection_string }}"
@@ -284,5 +309,5 @@ jobs:
         run: |
           set -euo pipefail
           # Assuming you'll have an output named 'ingestion_fqdn' in terraform/apps
-          INGESTION_FQDN=$("$TERRAFORM_CLI_PATH"/terraform-bin -chdir=terraform/apps output -raw ingestion_fqdn 2>&1)
+          INGESTION_FQDN=$(terraform -chdir=terraform/apps output -raw ingestion_fqdn 2>&1)
           echo "::notice::Ingestion Container App URL: $INGESTION_FQDN"
