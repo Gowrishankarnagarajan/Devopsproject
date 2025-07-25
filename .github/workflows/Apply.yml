@@ -95,25 +95,29 @@ jobs:
           # Debug: Print the value of ACR received in this job.
           echo "::debug::ACR received in push-image job: '$ACR'"
           
-          # --- Start of Dockerfile Path Debugging ---
+          # --- Start of Dockerfile Path Debugging and Correction ---
           echo "::debug::Listing contents of ./sourcecode/ingestion/ to verify Dockerfile presence:"
           # List contents of the directory where Dockerfile is expected.
-          # '|| true' prevents the step from failing if the directory is empty or doesn't exist (though it should).
+          # '|| true' prevents the step from failing if the directory is empty or doesn't exist.
           ls -l ./sourcecode/ingestion/ || true 
           
-          # Explicitly check if the Dockerfile exists at the expected path and with the correct casing.
-          if [ ! -f "./sourcecode/ingestion/Dockerfile" ]; then
-            echo "::error::Dockerfile not found at the expected path: ./sourcecode/ingestion/Dockerfile"
-            echo "::error::Please ensure your Dockerfile is named 'Dockerfile' (case-sensitive) and is directly inside the 'sourcecode/ingestion' directory."
+          # Define the expected Dockerfile path based on your input.
+          DOCKERFILE_PATH="./sourcecode/ingestion/Dockerfile"
+
+          # Explicitly check if the Dockerfile exists at the specified path and with the correct casing.
+          if [ ! -f "$DOCKERFILE_PATH" ]; then
+            echo "::error::Dockerfile not found at the expected path: $DOCKERFILE_PATH"
+            echo "::error::Please ensure your Dockerfile is named 'DockerFile' (case-sensitive) and is directly inside the 'sourcecode/ingestion' directory."
             exit 1 # Exit the step with an error if Dockerfile is not found
           fi
-          # --- End of Dockerfile Path Debugging ---
+          # --- End of Dockerfile Path Debugging and Correction ---
 
           # Extract ACR name for 'az acr login' (e.g., "gsacrsfx7ou" from "gsacrsfx7ou.azurecr.io")
           ACR_NAME=$(echo "$ACR" | cut -d. -f1)
           
           az acr login --name "$ACR_NAME"
-          docker build -t "$ACR/ingestion:latest" ./sourcecode/ingestion
+          # Use the -f flag to specify the exact Dockerfile path.
+          docker build -t "$ACR/ingestion:latest" -f "$DOCKERFILE_PATH" ./sourcecode/ingestion
           docker push "$ACR/ingestion:latest"
 
   deploy-apps:
