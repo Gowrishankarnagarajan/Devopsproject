@@ -25,23 +25,21 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v2
 
-      - name: Terraform Init & Apply Infra + Apps
+      - name: Build and Push Docker Image
         run: |
           set -euxo pipefail
-          # Initialize and apply infra (ACR etc)
-          terraform -chdir=terraform/infra init
-          terraform -chdir=terraform/infra apply -auto-approve
 
-          # Extract ACR login server
-          ACR_NAME=$(terraform -chdir=terraform/infra output -raw acr_login_server)
-          echo "ACR login server: $ACR_NAME"
+          # Extract the ACR login server from Terraform output
+          ACR_LOGIN_SERVER=$(terraform -chdir=terraform/infra output -raw acr_login_server)
+          echo "ACR login server: $ACR_LOGIN_SERVER"
 
-          # Build and push Docker image
-          az acr login --name $(echo $ACR_NAME | cut -d. -f1)
-          docker build -t "$ACR_NAME/ingestion:latest" ./sourcecode/ingestion
-          docker push "$ACR_NAME/ingestion:latest"
+          # Extract just the ACR name (e.g., gsacr99ub3e)
+          ACR_NAME=$(echo "$ACR_LOGIN_SERVER" | cut -d. -f1)
+          echo "ACR name: $ACR_NAME"
 
-          # Initialize and deploy app with the pushed image
-          terraform -chdir=terraform/apps init
-          terraform -chdir=terraform/apps apply -auto-approve -var="acr_login_server=$ACR_NAME"
+          # Login to ACR
+          az acr login --name "$ACR_NAME"
 
+          # Build and push the Docker image
+          docker build -t "$ACR_LOGIN_SERVER/ingestion:latest" ./sourcecode/ingestion
+          docker push "$ACR_LOGIN_SERVER/ingestion:latest"
