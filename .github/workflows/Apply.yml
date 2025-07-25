@@ -37,11 +37,12 @@ jobs:
       - name: Get ACR Login Server
         id: acr_output
         run: |
-           ACR_NAME=$(terraform -chdir=terraform/infra output -raw acr_login_server 2>/dev/null)
-           ESCAPED_ACR_NAME=${ACR_NAME//%/%25}
-           ESCAPED_ACR_NAME=${ESCAPED_ACR_NAME//:/%3A}
-           ESCAPED_ACR_NAME=${ESCAPED_ACR_NAME//$'\n'/%0A}
-           echo "acr_login_server=$ESCAPED_ACR_NAME" >> "$GITHUB_OUTPUT"
+           ACR_NAME=$(terraform -chdir=terraform/infra output -raw acr_login_server)
+            {
+              echo "acr_login_server<<EOF"
+              echo "$ACR_NAME"
+              echo "EOF"
+            } >> "$GITHUB_OUTPUT"
 
       - name: Debug ACR Login Server
         run: |
@@ -67,7 +68,7 @@ jobs:
           az acr login --name $(echo $ACR | cut -d. -f1)
           docker build -t $ACR/ingestion:latest ./sourcecode/ingestion
           docker push $ACR/ingestion:latest
-
+          
   deploy-apps:
     name: Deploy Container App
     runs-on: ubuntu-latest
