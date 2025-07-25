@@ -37,12 +37,12 @@ jobs:
       - name: Get ACR Login Server
         id: acr_output
         run: |
-           ACR_NAME=$(terraform -chdir=terraform/infra output -raw acr_login_server)
-            {
-              echo "acr_login_server<<EOF"
-              echo "$ACR_NAME"
-              echo "EOF"
-            } >> "$GITHUB_OUTPUT"
+          ACR_NAME=$(terraform -chdir=terraform/infra output -raw acr_login_server)
+          {
+            echo "acr_login_server<<EOF"
+            echo "$ACR_NAME"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Debug ACR Login Server
         run: |
