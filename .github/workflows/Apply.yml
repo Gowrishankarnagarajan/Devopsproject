@@ -34,9 +34,17 @@ jobs:
       - name: Get ACR Name
         id: get-acr
         run: |
+          set -euxo pipefail
           ACR_LOGIN_SERVER=$(terraform -chdir=terraform/infra output -raw acr_login_server)
           echo "ACR login server: $ACR_LOGIN_SERVER"
-          echo "acr_login_server=$ACR_LOGIN_SERVER" >> $GITHUB_OUTPUT
+          {
+            echo "acr_login_server<<EOF"
+            echo "$ACR_LOGIN_SERVER"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Check ACR output
+        run: echo "::notice::Resolved ACR is ${{ steps.get-acr.outputs.acr_login_server }}"
 
       - name: Docker Build & Push to ACR
         run: |
@@ -47,5 +55,3 @@ jobs:
           az acr login --name "$ACR_NAME"
           docker build -t "$ACR_LOGIN_SERVER/ingestion:latest" ./sourcecode/ingestion
           docker push "$ACR_LOGIN_SERVER/ingestion:latest"
-
-          
