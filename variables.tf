@@ -1,12 +1,8 @@
 variable "prefix" {
   type    = string
-  default = "demoapp"
+  default = "gs"
 }
 
-variable "rg_name" {
-  type    = string
-  default = "demoapp-rg"
-}
 
 variable "location" {
   type    = string

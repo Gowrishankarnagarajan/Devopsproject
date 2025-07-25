@@ -13,9 +13,15 @@ resource "azurerm_log_analytics_workspace" "logs" {
   sku                 = "PerGB2018"
 }
 
+resource "random_string" "acr_suffix" {
+  length  = 6
+  upper   = false
+  special = false
+}
+
 # Container Registry
 resource "azurerm_container_registry" "acr" {
-  name                = "${var.prefix}acr"
+  name                = "${var.prefix}acr${random_string.acr_suffix.result}"
   location            = var.location
   resource_group_name = azurerm_resource_group.rg.name
   sku                 = "Basic"
