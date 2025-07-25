@@ -50,8 +50,6 @@ jobs:
         id: acr_output
         run: |
           set -euo pipefail
-          # FIX: Using 'terraform' directly as it's added to PATH by setup-terraform action.
-          # This is the most reliable way to call Terraform in GitHub Actions.
           FULL_COMMAND_OUTPUT=$(terraform -chdir=terraform/infra output -raw acr_login_server 2>&1)
           echo "::debug::FULL_COMMAND_OUTPUT captured: '$FULL_COMMAND_OUTPUT'"
           ACR_NAME=$(echo "$FULL_COMMAND_OUTPUT" | grep -oE '[a-zA-Z0-9.-]+\.azurecr\.io' | head -n 1)
@@ -91,8 +89,18 @@ jobs:
         id: servicebus_output
         run: |
           set -euo pipefail
-          NAMESPACE_NAME=$(terraform -chdir=terraform/infra output -raw servicebus_namespace_name 2>&1 | head -n 1 | tr -d '\r')
-          CONNECTION_STRING=$(terraform -chdir=terraform/infra output -raw servicebus_connection_string 2>&1 | head -n 1 | tr -d '\r')
+          # Debugging: Print the raw output for namespace name
+          RAW_NAMESPACE_OUTPUT=$(terraform -chdir=terraform/infra output -raw servicebus_namespace_name 2>&1)
+          echo "::debug::Raw Service Bus Namespace Name Output: '$RAW_NAMESPACE_OUTPUT'"
+          NAMESPACE_NAME=$(echo "$RAW_NAMESPACE_OUTPUT" | head -n 1 | tr -d '\r')
+          echo "::debug::Extracted Service Bus Namespace Name: '$NAMESPACE_NAME'"
+
+          # Debugging: Print the raw output for connection string
+          RAW_CONNECTION_STRING_OUTPUT=$(terraform -chdir=terraform/infra output -raw servicebus_connection_string 2>&1)
+          echo "::debug::Raw Service Bus Connection String Output: '$RAW_CONNECTION_STRING_OUTPUT'"
+          CONNECTION_STRING=$(echo "$RAW_CONNECTION_STRING_OUTPUT" | head -n 1 | tr -d '\r')
+          echo "::debug::Extracted Service Bus Connection String: '$CONNECTION_STRING'"
+
           printf "servicebus_namespace_name=%s\n" "$NAMESPACE_NAME" >> "$GITHUB_OUTPUT"
           printf "servicebus_connection_string=%s\n" "$CONNECTION_STRING" >> "$GITHUB_OUTPUT"
 
@@ -108,7 +116,8 @@ jobs:
         run: |
           set -euo pipefail
           CONNECTION_STRING=$(terraform -chdir=terraform/infra output -raw cosmosdb_workflow_connection_string 2>&1 | head -n 1 | tr -d '\r')
-          printf "cosmosdb_workflow_connection_string=%s\n" "$CONNECTION_OUTPUT"
+          # FIX: Corrected typo from $CONNECTION_OUTPUT to $CONNECTION_STRING
+          printf "cosmosdb_workflow_connection_string=%s\n" "$CONNECTION_STRING" >> "$GITHUB_OUTPUT"
 
       - name: Get Redis Cache Connection String
         id: redis_output
@@ -223,7 +232,7 @@ jobs:
       - name: Build & Push Drone Scheduler Image
         id: push_drone_scheduler
         run: |
-          set -euxo pipefail
+          set -euo pipefail
           IMAGE_NAME="${{ env.ACR_LOGIN_SERVER }}/drone-scheduler:latest"
           if [ ! -f "./sourcecode/drone-scheduler/Dockerfile" ]; then
             echo "::error::Dockerfile not found for drone-scheduler at: ./sourcecode/drone-scheduler/Dockerfile"
@@ -236,7 +245,7 @@ jobs:
       - name: Build & Push Delivery Image
         id: push_delivery
         run: |
-          set -euxo pipefail
+          set -euo pipefail
           IMAGE_NAME="${{ env.ACR_LOGIN_SERVER }}/delivery:latest"
           if [ ! -f "./sourcecode/delivery/Dockerfile" ]; then
             echo "::error::Dockerfile not found for delivery at: ./sourcecode/delivery/Dockerfile"
