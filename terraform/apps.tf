@@ -1,33 +1,4 @@
 
-# Resource Group
-resource "azurerm_resource_group" "rg" {
-  name     = "${var.prefix}-rg"
-  location = var.location
-}
-
-# Log Analytics Workspace
-resource "azurerm_log_analytics_workspace" "logs" {
-  name                = "${var.prefix}-logs"
-  location            = var.location
-  resource_group_name = azurerm_resource_group.rg.name
-  sku                 = "PerGB2018"
-}
-
-resource "random_string" "acr_suffix" {
-  length  = 6
-  upper   = false
-  special = false
-}
-
-# Container Registry
-resource "azurerm_container_registry" "acr" {
-  name                = "${var.prefix}acr${random_string.acr_suffix.result}"
-  location            = var.location
-  resource_group_name = azurerm_resource_group.rg.name
-  sku                 = "Basic"
-  admin_enabled       = false
-}
-
 # Container App Environment
 resource "azurerm_container_app_environment" "env" {
   name                       = "${var.prefix}-env"
@@ -46,7 +17,8 @@ resource "azurerm_container_app" "ingestion" {
   resource_group_name          = azurerm_resource_group.rg.name
   container_app_environment_id = azurerm_container_app_environment.env.id
   revision_mode                = "Single"
-
+  depends_on = [ azurerm_container_registry.acr, azurerm_container_app_environment.env ]
+  
   template {
     container {
       name   = "ingestion"
@@ -76,7 +48,11 @@ resource "azurerm_role_assignment" "acr_pull_ingestion" {
   principal_id         = azurerm_container_app.ingestion.identity[0].principal_id
   role_definition_name = "AcrPull"
   scope                = azurerm_container_registry.acr.id
-  depends_on           = [azurerm_container_app.ingestion]
+    depends_on = [
+    azurerm_container_app.ingestion,
+    azurerm_container_registry.acr
+  ]
+
 }
 
 # Diagnostics

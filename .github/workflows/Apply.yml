@@ -9,57 +9,76 @@ permissions:
   id-token: write
 
 jobs:
-  terraform:
-    name: Apply Infrastructure
+  provision-infra:
+    name: Provision ACR Infrastructure
     runs-on: ubuntu-latest
 
+    outputs:
+      acr_login_server: ${{ steps.acr_output.outputs.acr_name }}
+
     steps:
-    - name: Checkout Code
-      uses: actions/checkout@v3
+      - name: Checkout Code
+        uses: actions/checkout@v3
 
-    - name: Azure Login
-      uses: azure/login@v1
-      with:
-        creds: ${{ secrets.AZURE_CREDENTIALS }}
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-    - name: Setup Terraform
-      uses: hashicorp/setup-terraform@v2
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
 
-    - name: Terraform Init
-      run: terraform init
+      - name: Terraform Init
+        run: terraform -chdir=terraform/infra init
 
-    - name: Terraform Apply
-      run: terraform apply -auto-approve
+      - name: Terraform Apply Infra
+        run: terraform -chdir=terraform/infra apply -auto-approve
 
-    - name: Save ACR Login Server
-      id: acr
-      run: |
-        ACR_NAME=$(terraform output -raw acr_login_server)
-        echo "acr_name=$ACR_NAME" >> $GITHUB_OUTPUT
+      - name: Get ACR Login Server
+        id: acr_output
+        run: |
+          ACR_NAME=$(terraform -chdir=terraform/infra output -raw acr_login_server)
+          echo "acr_name=$ACR_NAME" >> $GITHUB_OUTPUT
 
-  docker:
-    name: Build & Push Docker Images
+  push-image:
+    name: Build & Push Docker Image
     runs-on: ubuntu-latest
-    needs: terraform
+    needs: provision-infra
 
     steps:
-    - name: Checkout Code
-      uses: actions/checkout@v3
+      - name: Checkout Code
+        uses: actions/checkout@v3
 
-    - name: Azure Login
-      uses: azure/login@v1
-      with:
-        creds: ${{ secrets.AZURE_CREDENTIALS }}
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-    - name: Build & Push to ACR
-      run: |
-        ACR="${{ needs.terraform.outputs.acr_name }}"
-        SERVICES=("ingestion")
+      - name: Docker Build & Push
+        run: |
+          ACR="${{ needs.provision-infra.outputs.acr_login_server }}"
+          az acr login --name $(echo $ACR | cut -d. -f1)
+          docker build -t $ACR/ingestion:latest ./sourcecode/ingestion
+          docker push $ACR/ingestion:latest
 
-        az acr login --name $(echo $ACR | cut -d. -f1)
+  deploy-apps:
+    name: Deploy Container App
+    runs-on: ubuntu-latest
+    needs: push-image
 
-        for SERVICE in "${SERVICES[@]}"
-        do
-          docker build -t $ACR/$SERVICE:latest ./sourcecode/$SERVICE
-          docker push $ACR/$SERVICE:latest
-        done
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+
+      - name: Terraform Init & Apply
+        run: |
+          terraform -chdir=terraform/apps init
+          terraform -chdir=terraform/apps apply -auto-approve -var="acr_login_server=${{ needs.provision-infra.outputs.acr_login_server }}"
