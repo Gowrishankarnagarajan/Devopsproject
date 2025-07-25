@@ -65,8 +65,9 @@ jobs:
       - name: Docker Build & Push
         run: |
           set -euxo pipefail
-          ACR="${{ needs.provision-infra.outputs.acr_login_server }}"
-          # Extract ACR name (without domain)
+          # Login to Azure Container Registry
+          echo "Logging into Azure Container Registry"
+          ACR=$(terraform -chdir=terraform/infra output -raw acr_login_server)
           ACR_NAME=$(echo "$ACR" | cut -d. -f1)
           az acr login --name "$ACR_NAME"
           docker build -t "$ACR/ingestion:latest" ./sourcecode/ingestion
