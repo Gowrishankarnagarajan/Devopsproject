@@ -26,6 +26,7 @@ jobs:
       redis_connection_string: ${{ steps.redis_output.outputs.redis_connection_string }}
       application_insights_connection_string: ${{ steps.appinsights_output.outputs.application_insights_connection_string }}
       key_vault_uri: ${{ steps.keyvault_output.outputs.key_vault_uri }}
+      key_vault_id: ${{ steps.keyvault_id_output.outputs.key_vault_id }} # Added Key Vault ID output
 
     steps:
       - name: Checkout Code
@@ -38,6 +39,8 @@ jobs:
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: 1.7.2 # Pinning Terraform version as suggested by Copilot
 
       - name: Terraform Init (Infra)
         run: terraform -chdir=terraform/infra init
@@ -167,6 +170,17 @@ jobs:
           KEY_VAULT_URI=$(echo "$RAW_KEY_VAULT_URI" | head -n 1 | tr -d '\r')
           echo "::debug::Extracted Key Vault URI: '$KEY_VAULT_URI'"
           printf "key_vault_uri=%s\n" "$KEY_VAULT_URI" >> "$GITHUB_OUTPUT"
+
+      - name: Get Key Vault ID
+        id: keyvault_id_output # New step to get Key Vault ID
+        run: |
+          set -euo pipefail
+          # Assuming 'key_vault_id' is an output from your terraform/infra
+          RAW_KEY_VAULT_ID=$(terraform -chdir=terraform/infra output -raw key_vault_id 2>&1)
+          echo "::debug::Raw Key Vault ID Output: '$RAW_KEY_VAULT_ID'"
+          KEY_VAULT_ID=$(echo "$RAW_KEY_VAULT_ID" | head -n 1 | tr -d '\r')
+          echo "::debug::Extracted Key Vault ID: '$KEY_VAULT_ID'"
+          printf "key_vault_id=%s\n" "$KEY_VAULT_ID" >> "$GITHUB_OUTPUT"
       # --- End Output Retrieval Steps ---
 
       - name: Debug Provisioning Outputs
@@ -182,6 +196,7 @@ jobs:
           echo "::notice::Redis Connection String: ${{ steps.redis_output.outputs.redis_connection_string }}"
           echo "::notice::Application Insights Connection String: ${{ steps.appinsights_output.outputs.application_insights_connection_string }}"
           echo "::notice::Key Vault URI: ${{ steps.keyvault_output.outputs.key_vault_uri }}"
+          echo "::notice::Key Vault ID: ${{ steps.keyvault_id_output.outputs.key_vault_id }}" # Debugging for new output
 
 
   build-and-push-images:
@@ -206,14 +221,12 @@ jobs:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
       - name: Set ACR Variable
-        id: set_acr_var
-        run: |
-          ACR="${{ needs.provision-infra.outputs.acr_login_server }}"
-          echo "ACR_LOGIN_SERVER=$ACR" >> "$GITHUB_ENV"
+        # Simplified setting of ACR_LOGIN_SERVER into an environment variable
+        run: echo "ACR_LOGIN_SERVER=${{ needs.provision-infra.outputs.acr_login_server }}" >> "$GITHUB_ENV"
 
       - name: Docker Login to ACR
         run: |
-          set -euxo pipefail
+          set -euo pipefail
           ACR_NAME=$(echo "$ACR_LOGIN_SERVER" | cut -d. -f1)
           az acr login --name "$ACR_NAME"
 
@@ -320,6 +333,8 @@ jobs:
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: 1.7.2 # Pinning Terraform version as suggested by Copilot
 
       - name: Terraform Init & Apply (Apps)
         run: |
@@ -327,7 +342,8 @@ jobs:
           # Correctly assign RG_NAME and RG_NAME_PREFIX from job outputs
           # These variables should directly reference the outputs from the previous job
           RG_NAME="${{ needs.provision-infra.outputs.resource_group_name }}"
-          RG_NAME_PREFIX=$(echo "$RG_NAME" | sed -E 's/^aca-rg-//')
+          # Added robustness to sed command for RG_NAME_PREFIX
+          RG_NAME_PREFIX=$(echo "$RG_NAME" | sed -E 's/^aca-rg-//' || echo "$RG_NAME")
           
           # Debugging: Print all variables before Terraform Apply
           echo "::debug::Applying Terraform with the following variables:"
@@ -339,10 +355,11 @@ jobs:
           echo "::debug::servicebus_namespace_name: ${{ needs.provision-infra.outputs.servicebus_namespace_name }}"
           echo "::debug::servicebus_connection_string: ${{ needs.provision-infra.outputs.servicebus_connection_string }}"
           echo "::debug::cosmosdb_mongodb_connection_string: ${{ needs.provision-infra.outputs.cosmosdb_mongodb_connection_string }}"
-          echo "::debug::cosmosdb_workflow_connection_string: ${{ needs.cosmosdb_workflow_output.outputs.cosmosdb_workflow_connection_string }}"
-          echo "::debug::redis_connection_string: ${{ needs.redis_output.outputs.redis_connection_string }}"
-          echo "::debug::application_insights_connection_string: ${{ needs.appinsights_output.outputs.application_insights_connection_string }}"
-          echo "::debug::key_vault_uri: ${{ needs.keyvault_output.outputs.key_vault_uri }}"
+          echo "::debug::cosmosdb_workflow_connection_string: ${{ needs.provision-infra.outputs.cosmosdb_workflow_connection_string }}" # Corrected source
+          echo "::debug::redis_connection_string: ${{ needs.provision-infra.outputs.redis_connection_string }}"
+          echo "::debug::application_insights_connection_string: ${{ needs.provision-infra.outputs.application_insights_connection_string }}"
+          echo "::debug::key_vault_uri: ${{ needs.provision-infra.outputs.key_vault_uri }}"
+          echo "::debug::key_vault_id: ${{ needs.provision-infra.outputs.key_vault_id }}" # Correctly passing key_vault_id
           echo "::debug::ingestion_image: ${{ needs.build-and-push-images.outputs.ingestion_image }}"
           echo "::debug::workflow_image: ${{ needs.build-and-push-images.outputs.workflow_image }}"
           echo "::debug::package_image: ${{ needs.build-and-push-images.outputs.package_image }}"
@@ -359,10 +376,11 @@ jobs:
             -var="servicebus_namespace_name=${{ needs.provision-infra.outputs.servicebus_namespace_name }}" \
             -var="servicebus_connection_string=${{ needs.provision-infra.outputs.servicebus_connection_string }}" \
             -var="cosmosdb_mongodb_connection_string=${{ needs.provision-infra.outputs.cosmosdb_mongodb_connection_string }}" \
-            -var="cosmosdb_workflow_connection_string=${{ needs.cosmosdb_workflow_output.outputs.cosmosdb_workflow_connection_string }}" \
-            -var="redis_connection_string=${{ needs.redis_output.outputs.redis_connection_string }}" \
-            -var="application_insights_connection_string=${{ needs.appinsights_output.outputs.application_insights_connection_string }}" \
-            -var="key_vault_uri=${{ needs.keyvault_output.outputs.key_vault_uri }}" \
+            -var="cosmosdb_workflow_connection_string=${{ needs.provision-infra.outputs.cosmosdb_workflow_connection_string }}" \
+            -var="redis_connection_string=${{ needs.provision-infra.outputs.redis_connection_string }}" \
+            -var="application_insights_connection_string=${{ needs.provision-infra.outputs.application_insights_connection_string }}" \
+            -var="key_vault_uri=${{ needs.provision-infra.outputs.key_vault_uri }}" \
+            -var="key_vault_id=${{ needs.provision-infra.outputs.key_vault_id }}" \
             -var="ingestion_image=${{ needs.build-and-push-images.outputs.ingestion_image }}" \
             -var="workflow_image=${{ needs.build-and-push-images.outputs.workflow_image }}" \
             -var="package_image=${{ needs.build-and-push-images.outputs.package_image }}" \
@@ -371,7 +389,6 @@ jobs:
 
       - name: Get Ingestion App FQDN
         run: |
-          set -euo pipefail
-          # Assuming you'll have an output named 'ingestion_fqdn' in terraform/apps
-          INGESTION_FQDN=$(terraform -chdir=terraform/apps output -raw ingestion_fqdn 2>&1)
-          echo "::notice::Ingestion Container App URL: $INGESTION_FQDN"
+          set -euo pipefail # Kept for robustness
+          INGESTION_FQDN=$(terraform -chdir=terraform/apps output -raw ingestion_fqdn 2>&1) # Added 2>&1 for consistent error capture
+          echo "::notice::Ingestion App URL: $INGESTION_FQDN"
