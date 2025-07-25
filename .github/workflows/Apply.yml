@@ -324,6 +324,8 @@ jobs:
       - name: Terraform Init & Apply (Apps)
         run: |
           set -euxo pipefail
+          # Correctly assign RG_NAME and RG_NAME_PREFIX from job outputs
+          # These variables should directly reference the outputs from the previous job
           RG_NAME="${{ needs.provision-infra.outputs.resource_group_name }}"
           RG_NAME_PREFIX=$(echo "$RG_NAME" | sed -E 's/^aca-rg-//')
           
@@ -337,7 +339,7 @@ jobs:
           echo "::debug::servicebus_namespace_name: ${{ needs.provision-infra.outputs.servicebus_namespace_name }}"
           echo "::debug::servicebus_connection_string: ${{ needs.provision-infra.outputs.servicebus_connection_string }}"
           echo "::debug::cosmosdb_mongodb_connection_string: ${{ needs.provision-infra.outputs.cosmosdb_mongodb_connection_string }}"
-          echo "::debug::cosmosdb_workflow_connection_string: ${{ needs.provision-infra.outputs.cosmosdb_workflow_connection_string }}"
+          echo "::debug::cosmosdb_workflow_connection_string: ${{ needs.cosmosdb_workflow_output.outputs.cosmosdb_workflow_connection_string }}"
           echo "::debug::redis_connection_string: ${{ needs.redis_output.outputs.redis_connection_string }}"
           echo "::debug::application_insights_connection_string: ${{ needs.appinsights_output.outputs.application_insights_connection_string }}"
           echo "::debug::key_vault_uri: ${{ needs.keyvault_output.outputs.key_vault_uri }}"
@@ -357,7 +359,7 @@ jobs:
             -var="servicebus_namespace_name=${{ needs.provision-infra.outputs.servicebus_namespace_name }}" \
             -var="servicebus_connection_string=${{ needs.provision-infra.outputs.servicebus_connection_string }}" \
             -var="cosmosdb_mongodb_connection_string=${{ needs.provision-infra.outputs.cosmosdb_mongodb_connection_string }}" \
-            -var="cosmosdb_workflow_connection_string=${{ needs.provision-infra.outputs.cosmosdb_workflow_connection_string }}" \
+            -var="cosmosdb_workflow_connection_string=${{ needs.cosmosdb_workflow_output.outputs.cosmosdb_workflow_connection_string }}" \
             -var="redis_connection_string=${{ needs.redis_output.outputs.redis_connection_string }}" \
             -var="application_insights_connection_string=${{ needs.appinsights_output.outputs.application_insights_connection_string }}" \
             -var="key_vault_uri=${{ needs.keyvault_output.outputs.key_vault_uri }}" \
