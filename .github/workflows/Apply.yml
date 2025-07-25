@@ -34,14 +34,16 @@ jobs:
       - name: Terraform Apply Infra
         run: terraform -chdir=terraform/infra apply -auto-approve
 
-
       - name: Get ACR Login Server
         id: acr_output
         run: |
           set -euo pipefail
-          ACR_NAME=$(terraform -chdir=terraform/infra output -raw acr_login_server | tr -d '\r')
+          # Capture the raw output, including any unexpected debug messages.
+          # Then, use 'cut' to extract only the first field, delimited by '::'.
+          # This assumes the ACR login server is always the first part before '::debug::'.
+          RAW_ACR_OUTPUT=$(terraform -chdir=terraform/infra output -raw acr_login_server 2>&1)
+          ACR_NAME=$(echo "$RAW_ACR_OUTPUT" | tr -d '\r' | cut -d':' -f1)
           echo "acr_login_server=$ACR_NAME" >> "$GITHUB_OUTPUT"
-
 
       - name: Debug ACR Login Server
         run: echo "::notice::ACR is ${{ steps.acr_output.outputs.acr_login_server }}"
@@ -64,6 +66,7 @@ jobs:
         run: |
           set -euxo pipefail
           ACR="${{ needs.provision-infra.outputs.acr_login_server }}"
+          # Extract ACR name for 'az acr login'
           ACR_NAME=$(echo "$ACR" | cut -d. -f1)
           az acr login --name "$ACR_NAME"
           docker build -t "$ACR/ingestion:latest" ./sourcecode/ingestion
