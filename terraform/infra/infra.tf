@@ -12,10 +12,9 @@ resource "azurerm_log_analytics_workspace" "logs" {
   sku                 = "PerGB2018"
 }
 
-resource "random_string" "acr_suffix" {
-  length  = 6
-  upper   = false
-  special = false
+resource "random_integer" "acr_suffix" {
+  min = 10000
+  max = 99999
 }
 
 # Container Registry
@@ -24,7 +23,7 @@ resource "azurerm_container_registry" "acr" {
   location            = var.location
   resource_group_name = azurerm_resource_group.rg.name
   sku                 = "Basic"
-  admin_enabled       = false
+  admin_enabled       = true
   identity {
     type = "SystemAssigned"
   }

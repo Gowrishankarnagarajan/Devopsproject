@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   deploy-all:
-    name: Provision ACR + Build Image + Deploy App
+    name: Provision ACR + Build + Deploy App
     runs-on: ubuntu-latest
 
     steps:
@@ -25,21 +25,27 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v2
 
-      - name: Build and Push Docker Image
+      - name: Terraform Init & Apply Infra
         run: |
           set -euxo pipefail
+          terraform -chdir=terraform/infra init
+          terraform -chdir=terraform/infra apply -auto-approve
 
-          # Extract the ACR login server from Terraform output
+      - name: Get ACR Name
+        id: get-acr
+        run: |
           ACR_LOGIN_SERVER=$(terraform -chdir=terraform/infra output -raw acr_login_server)
           echo "ACR login server: $ACR_LOGIN_SERVER"
+          echo "acr_login_server=$ACR_LOGIN_SERVER" >> $GITHUB_OUTPUT
 
-          # Extract just the ACR name (e.g., gsacr99ub3e)
+      - name: Docker Build & Push to ACR
+        run: |
+          set -euxo pipefail
+          ACR_LOGIN_SERVER="${{ steps.get-acr.outputs.acr_login_server }}"
           ACR_NAME=$(echo "$ACR_LOGIN_SERVER" | cut -d. -f1)
-          echo "ACR name: $ACR_NAME"
 
-          # Login to ACR
           az acr login --name "$ACR_NAME"
-
-          # Build and push the Docker image
           docker build -t "$ACR_LOGIN_SERVER/ingestion:latest" ./sourcecode/ingestion
           docker push "$ACR_LOGIN_SERVER/ingestion:latest"
+
+          
