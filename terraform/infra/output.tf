@@ -1,14 +1,13 @@
+# C:\Karthik_Devops\Terraform\Devopsproject\terraform\infra\output.tf
 
 output "cosmosdb_mongodb_connection_string" {
   description = "The connection string for the MongoDB Cosmos DB account."
-  # FIX: Changed to 'connection_strings[0]' as per azurerm provider version 3.64.0 documentation for MongoDB kind.
   value       = azurerm_cosmosdb_account.cosmosdb_mongodb.connection_strings[0]
   sensitive   = true
 }
 
 output "cosmosdb_workflow_connection_string" {
   description = "The connection string for the Workflow Cosmos DB account."
-  # FIX: Changed to 'connection_strings[0]' as this attribute is available for all Cosmos DB kinds in provider version 3.64.0.
   value       = azurerm_cosmosdb_account.cosmosdb_workflow.connection_strings[0]
   sensitive   = true
 }
@@ -44,4 +43,10 @@ output "log_analytics_workspace_id" {
 output "resource_group_name" {
   description = "The name of the resource group."
   value       = azurerm_resource_group.rg.name
+}
+
+# This is the output for the Azure Container Registry login server
+output "acr_login_server" {
+  description = "The login server for the Azure Container Registry."
+  value       = azurerm_container_registry.acr.login_server
 }
