@@ -33,13 +33,15 @@ output "servicebus_connection_string" {
 
 output "cosmosdb_mongodb_connection_string" {
   description = "The connection string for the MongoDB API Cosmos DB account."
-  value       = azurerm_cosmosdb_account.cosmosdb_mongodb.connection_strings[0]
+  # Corrected: Use 'mongo_db_connection_string' for MongoDB kind
+  value       = azurerm_cosmosdb_account.cosmosdb_mongodb.mongo_db_connection_string
   sensitive   = true
 }
 
 output "cosmosdb_workflow_connection_string" {
   description = "The connection string for the Workflow Cosmos DB account."
-  value       = azurerm_cosmosdb_account.cosmosdb_workflow.connection_strings[0]
+  # Corrected: Use 'primary_connection_string' for GlobalDocumentDB kind
+  value       = azurerm_cosmosdb_account.cosmosdb_workflow.primary_connection_string
   sensitive   = true
 }
 
@@ -58,4 +60,9 @@ output "application_insights_connection_string" {
 output "key_vault_uri" {
   description = "The URI of the Key Vault."
   value       = azurerm_key_vault.key_vault.vault_uri
+}
+
+output "key_vault_id" {
+  description = "The ID of the Key Vault."
+  value       = azurerm_key_vault.key_vault.id
 }

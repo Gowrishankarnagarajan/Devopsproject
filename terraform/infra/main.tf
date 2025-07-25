@@ -38,13 +38,15 @@ resource "azurerm_servicebus_namespace" "sb_namespace" {
 resource "azurerm_servicebus_queue" "ingestion_queue" {
   name                = "ingestion-queue"
   namespace_id        = azurerm_servicebus_namespace.sb_namespace.id
-  enable_partitioning = false
+  # Corrected: Use 'partitioning_enabled' instead of 'enable_partitioning'
+  partitioning_enabled = false
 }
 
 resource "azurerm_servicebus_queue" "workflow_queue" {
   name                = "workflow-queue"
   namespace_id        = azurerm_servicebus_namespace.sb_namespace.id
-  enable_partitioning = false
+  # Corrected: Use 'partitioning_enabled' instead of 'enable_partitioning'
+  partitioning_enabled = false
 }
 
 resource "azurerm_cosmosdb_account" "cosmosdb_mongodb" {
@@ -69,7 +71,7 @@ resource "azurerm_cosmosdb_account" "cosmosdb_workflow" {
   location            = azurerm_resource_group.rg.location
   resource_group_name = azurerm_resource_group.rg.name
   offer_type          = "Standard"
-  kind                = "GlobalDocumentDB" # Or "MongoDB" if your workflow specifically uses MongoDB API
+  kind                = "GlobalDocumentDB"
   
   consistency_policy {
     consistency_level = "Session"
@@ -96,7 +98,8 @@ resource "azurerm_application_insights" "app_insights" {
   name                = "aca-appinsights-${random_string.suffix.result}"
   location            = azurerm_resource_group.rg.location
   resource_group_name = azurerm_resource_group.rg.name
-  application_type    = "Web"
+  # Corrected: 'web' (lowercase) instead of 'Web'
+  application_type    = "web"
   workspace_id        = azurerm_log_analytics_workspace.logs.id
 }
 
