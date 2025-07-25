@@ -1,5 +1,25 @@
 # terraform/infra/main.tf
 
+# Terraform and Provider Configuration
+terraform {
+  required_providers {
+    azurerm = {
+      source  = "hashicorp/azurerm"
+      version = "~> 3.0"
+    }
+    random = { # Ensure random provider is also declared if used
+      source  = "hashicorp/random"
+      version = "~> 3.0"
+    }
+  }
+
+  required_version = ">= 1.3.0"
+}
+
+provider "azurerm" {
+  features {}
+}
+
 resource "random_string" "suffix" {
   length  = 6
   special = false
@@ -38,14 +58,12 @@ resource "azurerm_servicebus_namespace" "sb_namespace" {
 resource "azurerm_servicebus_queue" "ingestion_queue" {
   name                = "ingestion-queue"
   namespace_id        = azurerm_servicebus_namespace.sb_namespace.id
-  # Corrected: Use 'partitioning_enabled' instead of 'enable_partitioning'
   partitioning_enabled = false
 }
 
 resource "azurerm_servicebus_queue" "workflow_queue" {
   name                = "workflow-queue"
   namespace_id        = azurerm_servicebus_namespace.sb_namespace.id
-  # Corrected: Use 'partitioning_enabled' instead of 'enable_partitioning'
   partitioning_enabled = false
 }
 
@@ -90,7 +108,8 @@ resource "azurerm_redis_cache" "redis_cache" {
   capacity            = 1 # C0 Basic (smallest size)
   family              = "C"
   sku_name            = "Basic"
-  enable_non_ssl_port = false
+  # Corrected: Use 'non_ssl_port_enabled' instead of 'enable_non_ssl_port'
+  non_ssl_port_enabled = false
   minimum_tls_version = "1.2"
 }
 
@@ -98,7 +117,6 @@ resource "azurerm_application_insights" "app_insights" {
   name                = "aca-appinsights-${random_string.suffix.result}"
   location            = azurerm_resource_group.rg.location
   resource_group_name = azurerm_resource_group.rg.name
-  # Corrected: 'web' (lowercase) instead of 'Web'
   application_type    = "web"
   workspace_id        = azurerm_log_analytics_workspace.logs.id
 }
@@ -109,13 +127,12 @@ resource "azurerm_key_vault" "key_vault" {
   resource_group_name         = azurerm_resource_group.rg.name
   tenant_id                   = data.azurerm_client_config.current.tenant_id
   sku_name                    = "standard"
-  enabled_for_disk_encryption = false # Set to true if needed for VM disk encryption
-  purge_protection_enabled    = false # Set to true for higher security
+  enabled_for_disk_encryption = false
+  purge_protection_enabled    = false
 }
 
 data "azurerm_client_config" "current" {}
 
-# Example: Storing a dummy secret in Key Vault
 resource "azurerm_key_vault_secret" "example_secret" {
   name         = "ExampleSecret"
   value        = "my-super-secret-value"
