@@ -95,9 +95,20 @@ jobs:
           # Debug: Print the value of ACR received in this job.
           echo "::debug::ACR received in push-image job: '$ACR'"
           
-          # No need for sed 's/"//g' or CLEAN_ACR if the output is consistently clean now.
-          # Use ACR directly as it should contain just the domain.
+          # --- Start of Dockerfile Path Debugging ---
+          echo "::debug::Listing contents of ./sourcecode/ingestion/ to verify Dockerfile presence:"
+          # List contents of the directory where Dockerfile is expected.
+          # '|| true' prevents the step from failing if the directory is empty or doesn't exist (though it should).
+          ls -l ./sourcecode/ingestion/ || true 
           
+          # Explicitly check if the Dockerfile exists at the expected path and with the correct casing.
+          if [ ! -f "./sourcecode/ingestion/Dockerfile" ]; then
+            echo "::error::Dockerfile not found at the expected path: ./sourcecode/ingestion/Dockerfile"
+            echo "::error::Please ensure your Dockerfile is named 'Dockerfile' (case-sensitive) and is directly inside the 'sourcecode/ingestion' directory."
+            exit 1 # Exit the step with an error if Dockerfile is not found
+          fi
+          # --- End of Dockerfile Path Debugging ---
+
           # Extract ACR name for 'az acr login' (e.g., "gsacrsfx7ou" from "gsacrsfx7ou.azurecr.io")
           ACR_NAME=$(echo "$ACR" | cut -d. -f1)
           
