@@ -1,10 +1,11 @@
 # terraform/apps/main.tf
-
+# This file contains the main configuration for Azure Container Apps
+# It defines the Container Apps environment and individual services
 resource "azurerm_container_app_environment" "env" {
-  name                         = "aca-env-${var.resource_group_name_prefix}"
-  location                     = var.location
-  resource_group_name          = var.resource_group_name
-  log_analytics_workspace_id   = var.log_analytics_workspace_id
+  name                       = "aca-env-${var.resource_group_name_prefix}"
+  location                   = var.location
+  resource_group_name        = var.resource_group_name
+  log_analytics_workspace_id = var.log_analytics_workspace_id
   # infrastructure_subnet_id     = null # Optional, for VNet integration
 }
 
@@ -28,12 +29,11 @@ resource "azurerm_container_app" "ingestion_service" {
       memory = "1.0Gi"
       env {
         name  = "SERVICEBUS_CONNECTION_STRING"
-        value = var.servicebus_connection_string # Or retrieve from Key Vault
-        # secret_ref = "servicebus-connection-string" # If using Key Vault secrets
+        value = var.servicebus_connection_string
       }
       env {
         name  = "COSMOSDB_MONGODB_CONNECTION_STRING"
-        value = var.cosmosdb_mongodb_connection_string # Or retrieve from Key Vault
+        value = var.cosmosdb_mongodb_connection_string
       }
       env {
         name  = "APPLICATIONINSIGHTS_CONNECTION_STRING"
@@ -44,18 +44,20 @@ resource "azurerm_container_app" "ingestion_service" {
         value = var.key_vault_uri
       }
     }
-    scale {
-      min_replicas = 1
-      max_replicas = 5
-    }
+    # FIX: For azurerm provider version 3.64.0, min_replicas and max_replicas
+    # are direct attributes of the 'template' block. The 'replica' and 'scale'
+    # blocks for advanced scaling were introduced in later versions.
+    min_replicas = 1
+    max_replicas = 5
   }
 
   ingress {
-    external_enabled = true # Ingestion service is exposed to HTTP traffic
-    target_port      = 8080 # Example port for your service
-    transport        = "Auto"
+    external_enabled = true
+    target_port      = 8080
+    # FIX: Changed "Auto" to "auto" as required by the provider schema
+    transport = "auto"
     traffic_weight {
-      percentage = 100
+      percentage      = 100
       latest_revision = true
     }
   }
@@ -95,18 +97,19 @@ resource "azurerm_container_app" "workflow_service" {
         value = var.key_vault_uri
       }
     }
-    scale {
-      min_replicas = 1
-      max_replicas = 3
-    }
+    # FIX: For azurerm provider version 3.64.0, min_replicas and max_replicas
+    # are direct attributes of the 'template' block.
+    min_replicas = 1
+    max_replicas = 3
   }
 
   ingress {
-    external_enabled = false # Workflow service is internal
-    target_port      = 8081 # Example port
-    transport        = "Auto"
+    external_enabled = false
+    target_port      = 8081
+    # FIX: Changed "Auto" to "auto" as required by the provider schema
+    transport = "auto"
     traffic_weight {
-      percentage = 100
+      percentage      = 100
       latest_revision = true
     }
   }
@@ -142,18 +145,19 @@ resource "azurerm_container_app" "package_service" {
         value = var.key_vault_uri
       }
     }
-    scale {
-      min_replicas = 1
-      max_replicas = 2
-    }
+    # FIX: For azurerm provider version 3.64.0, min_replicas and max_replicas
+    # are direct attributes of the 'template' block.
+    min_replicas = 1
+    max_replicas = 2
   }
 
   ingress {
-    external_enabled = false # Package service is internal
-    target_port      = 8082 # Example port
-    transport        = "Auto"
+    external_enabled = false
+    target_port      = 8082
+    # FIX: Changed "Auto" to "auto" as required by the provider schema
+    transport = "auto"
     traffic_weight {
-      percentage = 100
+      percentage      = 100
       latest_revision = true
     }
   }
@@ -189,18 +193,19 @@ resource "azurerm_container_app" "drone_scheduler_service" {
         value = var.key_vault_uri
       }
     }
-    scale {
-      min_replicas = 1
-      max_replicas = 2
-    }
+    # FIX: For azurerm provider version 3.64.0, min_replicas and max_replicas
+    # are direct attributes of the 'template' block.
+    min_replicas = 1
+    max_replicas = 2
   }
 
   ingress {
-    external_enabled = false # Drone Scheduler service is internal
-    target_port      = 8083 # Example port
-    transport        = "Auto"
+    external_enabled = false
+    target_port      = 8083
+    # FIX: Changed "Auto" to "auto" as required by the provider schema
+    transport = "auto"
     traffic_weight {
-      percentage = 100
+      percentage      = 100
       latest_revision = true
     }
   }
@@ -236,34 +241,35 @@ resource "azurerm_container_app" "delivery_service" {
         value = var.key_vault_uri
       }
     }
-    scale {
-      min_replicas = 1
-      max_replicas = 2
-    }
+    # FIX: For azurerm provider version 3.64.0, min_replicas and max_replicas
+    # are direct attributes of the 'template' block.
+    min_replicas = 1
+    max_replicas = 2
   }
 
   ingress {
-    external_enabled = false # Delivery service is internal
-    target_port      = 8084 # Example port
-    transport        = "Auto"
+    external_enabled = false
+    target_port      = 8084
+    # FIX: Changed "Auto" to "auto" as required by the provider schema
+    transport = "auto"
     traffic_weight {
-      percentage = 100
+      percentage      = 100
       latest_revision = true
     }
   }
 }
 
+
 # Set Key Vault Access Policies for each Container App's Managed Identity
 # This grants the Container App's system-assigned managed identity permissions to Key Vault
 resource "azurerm_key_vault_access_policy" "ingestion_kv_policy" {
-  key_vault_id = var.key_vault_id # Need to pass Key Vault ID from infra
+  key_vault_id = var.key_vault_id
   tenant_id    = azurerm_container_app.ingestion_service.identity[0].tenant_id
   object_id    = azurerm_container_app.ingestion_service.identity[0].principal_id
 
   secret_permissions = [
     "Get", "List"
   ]
-  # Add other permissions (e.g., "Get", "List" for keys/certificates) as needed
 }
 
 resource "azurerm_key_vault_access_policy" "workflow_kv_policy" {
