@@ -37,6 +37,7 @@ jobs:
       - name: Get ACR Login Server
         id: acr_output
         run: |
+          set -euxo pipefail
           ACR_NAME=$(terraform -chdir=terraform/infra output -raw acr_login_server)
           {
             echo "acr_login_server<<EOF"
@@ -63,10 +64,13 @@ jobs:
 
       - name: Docker Build & Push
         run: |
+          set -euxo pipefail
           ACR="${{ needs.provision-infra.outputs.acr_login_server }}"
-          az acr login --name $(echo $ACR | cut -d. -f1)
-          docker build -t $ACR/ingestion:latest ./sourcecode/ingestion
-          docker push $ACR/ingestion:latest
+          # Extract ACR name (without domain)
+          ACR_NAME=$(echo "$ACR" | cut -d. -f1)
+          az acr login --name "$ACR_NAME"
+          docker build -t "$ACR/ingestion:latest" ./sourcecode/ingestion
+          docker push "$ACR/ingestion:latest"
 
   deploy-apps:
     name: Deploy Container App
@@ -87,5 +91,6 @@ jobs:
 
       - name: Terraform Init & Apply
         run: |
+          set -euxo pipefail
           terraform -chdir=terraform/apps init
           terraform -chdir=terraform/apps apply -auto-approve -var="acr_login_server=${{ needs.provision-infra.outputs.acr_login_server }}"
