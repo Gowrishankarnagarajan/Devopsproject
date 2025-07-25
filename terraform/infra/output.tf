@@ -18,6 +18,12 @@ output "servicebus_connection_string" {
   sensitive   = true
 }
 
+# FIX: Added missing output for the Service Bus Namespace Name
+output "servicebus_namespace_name" {
+  description = "The name of the Service Bus Namespace."
+  value       = azurerm_servicebus_namespace.sb_namespace.name
+}
+
 output "redis_connection_string" {
   description = "The primary connection string for the Redis Cache."
   value       = azurerm_redis_cache.redis_cache.primary_connection_string
@@ -49,4 +55,10 @@ output "resource_group_name" {
 output "acr_login_server" {
   description = "The login server for the Azure Container Registry."
   value       = azurerm_container_registry.acr.login_server
+}
+
+# FIX: Added missing output for the Azure region (location)
+output "location" {
+  description = "The Azure region where resources are deployed."
+  value       = azurerm_resource_group.rg.location
 }
