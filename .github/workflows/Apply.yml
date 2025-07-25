@@ -102,7 +102,7 @@ jobs:
           ls -l ./sourcecode/ingestion/ || true 
           
           # Define the expected Dockerfile path based on your input.
-          DOCKERFILE_PATH="./sourcecode/ingestion/Dockerfile"
+          DOCKERFILE_PATH="./sourcecode/ingestion/DockerFile"
 
           # Explicitly check if the Dockerfile exists at the specified path and with the correct casing.
           if [ ! -f "$DOCKERFILE_PATH" ]; then
