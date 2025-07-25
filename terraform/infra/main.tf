@@ -1,24 +1,6 @@
 # terraform/infra/main.tf
 
-# Terraform and Provider Configuration
-terraform {
-  required_providers {
-    azurerm = {
-      source  = "hashicorp/azurerm"
-      version = "~> 3.0"
-    }
-    random = { # Ensure random provider is also declared if used
-      source  = "hashicorp/random"
-      version = "~> 3.0"
-    }
-  }
 
-  required_version = ">= 1.3.0"
-}
-
-provider "azurerm" {
-  features {}
-}
 
 resource "random_string" "suffix" {
   length  = 6
