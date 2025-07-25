@@ -108,7 +108,11 @@ jobs:
         id: cosmosdb_mongodb_output
         run: |
           set -euo pipefail
-          CONNECTION_STRING=$(terraform -chdir=terraform/infra output -raw cosmosdb_mongodb_connection_string 2>&1 | head -n 1 | tr -d '\r')
+          # Debugging: Print the raw output for MongoDB connection string
+          RAW_CONNECTION_STRING=$(terraform -chdir=terraform/infra output -raw cosmosdb_mongodb_connection_string 2>&1)
+          echo "::debug::Raw Cosmos DB MongoDB Connection String Output: '$RAW_CONNECTION_STRING'"
+          CONNECTION_STRING=$(echo "$RAW_CONNECTION_STRING" | head -n 1 | tr -d '\r')
+          echo "::debug::Extracted Cosmos DB MongoDB Connection String: '$CONNECTION_STRING'"
           printf "cosmosdb_mongodb_connection_string=%s\n" "$CONNECTION_STRING" >> "$GITHUB_OUTPUT"
 
       - name: Get Cosmos DB Workflow Connection String
@@ -116,7 +120,6 @@ jobs:
         run: |
           set -euo pipefail
           CONNECTION_STRING=$(terraform -chdir=terraform/infra output -raw cosmosdb_workflow_connection_string 2>&1 | head -n 1 | tr -d '\r')
-          # FIX: Corrected typo from $CONNECTION_OUTPUT to $CONNECTION_STRING
           printf "cosmosdb_workflow_connection_string=%s\n" "$CONNECTION_STRING" >> "$GITHUB_OUTPUT"
 
       - name: Get Redis Cache Connection String
@@ -232,7 +235,7 @@ jobs:
       - name: Build & Push Drone Scheduler Image
         id: push_drone_scheduler
         run: |
-          set -euo pipefail
+          set -euxo pipefail
           IMAGE_NAME="${{ env.ACR_LOGIN_SERVER }}/drone-scheduler:latest"
           if [ ! -f "./sourcecode/drone-scheduler/Dockerfile" ]; then
             echo "::error::Dockerfile not found for drone-scheduler at: ./sourcecode/drone-scheduler/Dockerfile"
@@ -245,7 +248,7 @@ jobs:
       - name: Build & Push Delivery Image
         id: push_delivery
         run: |
-          set -euo pipefail
+          set -euxo pipefail
           IMAGE_NAME="${{ env.ACR_LOGIN_SERVER }}/delivery:latest"
           if [ ! -f "./sourcecode/delivery/Dockerfile" ]; then
             echo "::error::Dockerfile not found for delivery at: ./sourcecode/delivery/Dockerfile"
