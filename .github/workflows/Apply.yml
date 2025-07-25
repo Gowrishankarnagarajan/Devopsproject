@@ -38,27 +38,36 @@ jobs:
         id: acr_output
         run: |
           set -euo pipefail
-          # Capture all output (stdout and stderr) from Terraform.
-          RAW_ACR_OUTPUT=$(terraform -chdir=terraform/infra output -raw acr_login_server 2>&1)
           
-          # Process the raw output to ensure a clean, single line:
-          # 1. Remove carriage returns (tr -d '\r').
-          # 2. Take only the first line (head -n 1). This is crucial if Terraform or the environment
-          #    is unexpectedly printing multiple lines.
-          # 3. Use 'cut -d':' -f1' to handle any potential '::debug::' or similar prefixes,
-          #    making the extraction robust even if such prefixes reappear.
-          ACR_NAME=$(echo "$RAW_ACR_OUTPUT" | tr -d '\r' | head -n 1 | cut -d':' -f1)
+          # Capture all output (stdout and stderr) from the direct binary execution.
+          # We explicitly use "$TERRAFORM_CLI_PATH"/terraform-bin to ensure we're running
+          # the core executable, not a shell alias or wrapper that might add extra text.
+          FULL_COMMAND_OUTPUT=$("$TERRAFORM_CLI_PATH"/terraform-bin -chdir=terraform/infra output -raw acr_login_server 2>&1)
           
-          # Debug: Print the extracted ACR_NAME before writing to GITHUB_OUTPUT
-          echo "::debug::ACR_NAME extracted: '$ACR_NAME'"
+          # Debug: Print the full raw output captured from the command.
+          echo "::debug::FULL_COMMAND_OUTPUT captured: '$FULL_COMMAND_OUTPUT'"
+
+          # Extract the ACR login server using grep with a regular expression.
+          # -oE: Prints only the matched parts, extended regex.
+          # '[a-zA-Z0-9.-]+\.azurecr\.io': This regex specifically matches domain names
+          #    ending in '.azurecr.io', which is the expected format for ACR login servers.
+          # head -n 1: Ensures only the first match is taken, in case multiple lines
+          #    contain similar patterns (highly unlikely for this specific output).
+          ACR_NAME=$(echo "$FULL_COMMAND_OUTPUT" | grep -oE '[a-zA-Z0-9.-]+\.azurecr\.io' | head -n 1)
           
-          # Write the key-value pair to GITHUB_OUTPUT, explicitly quoting the value.
-          # This is the most critical change, as it helps GitHub Actions parse the value correctly.
-          echo "acr_login_server=\"$ACR_NAME\"" >> "$GITHUB_OUTPUT"
+          # Debug: Print the extracted ACR_NAME after regex filtering.
+          echo "::debug::ACR_NAME extracted after regex: '$ACR_NAME'"
           
-          # Debug: Show the content that was written to GITHUB_OUTPUT
-          echo "::debug::Content written to GITHUB_OUTPUT:"
-          cat "$GITHUB_OUTPUT" || true # '|| true' prevents step failure if file is empty/not found (unlikely here)
+          # Write the key-value pair to GITHUB_OUTPUT.
+          # Using printf for explicit newline control is generally safer.
+          # We are no longer adding quotes here, as the regex should provide a clean value,
+          # and adding quotes might cause issues with GitHub Actions' internal parsing
+          # if it expects a raw string.
+          printf "acr_login_server=%s\n" "$ACR_NAME" >> "$GITHUB_OUTPUT"
+          
+          # Debug: Show the exact content that was written to GITHUB_OUTPUT file.
+          echo "::debug::Content written to GITHUB_OUTPUT file:"
+          cat "$GITHUB_OUTPUT"
 
       - name: Debug ACR Login Server
         run: echo "::notice::ACR is ${{ steps.acr_output.outputs.acr_login_server }}"
@@ -80,22 +89,21 @@ jobs:
       - name: Docker Build & Push
         run: |
           set -euxo pipefail
-          # The ACR variable should now correctly receive the quoted string from the previous job's output.
+          # The ACR variable should now correctly receive the clean string from the previous job's output.
           ACR="${{ needs.provision-infra.outputs.acr_login_server }}"
           
-          # Debug: Print the value of ACR received in this job
+          # Debug: Print the value of ACR received in this job.
           echo "::debug::ACR received in push-image job: '$ACR'"
           
-          # Remove quotes from the ACR variable if they were added for output parsing.
-          # This ensures 'az acr login' and 'docker build' get a clean registry name.
-          CLEAN_ACR=$(echo "$ACR" | sed 's/"//g')
+          # No need for sed 's/"//g' or CLEAN_ACR if the output is consistently clean now.
+          # Use ACR directly as it should contain just the domain.
           
-          # Extract ACR name for 'az acr login'
-          ACR_NAME=$(echo "$CLEAN_ACR" | cut -d. -f1)
+          # Extract ACR name for 'az acr login' (e.g., "gsacrsfx7ou" from "gsacrsfx7ou.azurecr.io")
+          ACR_NAME=$(echo "$ACR" | cut -d. -f1)
           
           az acr login --name "$ACR_NAME"
-          docker build -t "$CLEAN_ACR/ingestion:latest" ./sourcecode/ingestion
-          docker push "$CLEAN_ACR/ingestion:latest"
+          docker build -t "$ACR/ingestion:latest" ./sourcecode/ingestion
+          docker push "$ACR/ingestion:latest"
 
   deploy-apps:
     name: Deploy Container App
