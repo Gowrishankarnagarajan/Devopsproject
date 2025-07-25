@@ -38,12 +38,20 @@ jobs:
         id: acr_output
         run: |
           set -euo pipefail
-          # Capture the raw output, including any unexpected debug messages.
-          # Then, use 'cut' to extract only the first field, delimited by '::'.
-          # This assumes the ACR login server is always the first part before '::debug::'.
+          # Capture all output (stdout and stderr) from Terraform.
           RAW_ACR_OUTPUT=$(terraform -chdir=terraform/infra output -raw acr_login_server 2>&1)
-          ACR_NAME=$(echo "$RAW_ACR_OUTPUT" | tr -d '\r' | cut -d':' -f1)
-          echo "acr_login_server=$ACR_NAME" >> "$GITHUB_OUTPUT"
+          
+          # Process the raw output to ensure a clean, single line:
+          # 1. Remove carriage returns (tr -d '\r').
+          # 2. Take only the first line (head -n 1). This is crucial if Terraform or the environment
+          #    is unexpectedly printing multiple lines.
+          # 3. Use 'cut -d':' -f1' to handle any potential '::debug::' or similar prefixes,
+          #    making the extraction robust even if such prefixes reappear.
+          ACR_NAME=$(echo "$RAW_ACR_OUTPUT" | tr -d '\r' | head -n 1 | cut -d':' -f1)
+          
+          # Write the key-value pair to GITHUB_OUTPUT.
+          # Using printf for explicit newline control is generally safer than echo.
+          printf "acr_login_server=%s\n" "$ACR_NAME" >> "$GITHUB_OUTPUT"
 
       - name: Debug ACR Login Server
         run: echo "::notice::ACR is ${{ steps.acr_output.outputs.acr_login_server }}"
