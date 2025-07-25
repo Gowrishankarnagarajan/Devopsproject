@@ -50,28 +50,13 @@ jobs:
         id: acr_output
         run: |
           set -euo pipefail
-          # Capture all output (stdout and stderr) from the direct binary execution.
-          # We explicitly use "$TERRAFORM_CLI_PATH"/terraform-bin to ensure we're running
-          # the core executable, not a shell alias or wrapper that might add extra text.
-          FULL_COMMAND_OUTPUT=$("$TERRAFORM_CLI_PATH"/terraform-bin -chdir=terraform/infra output -raw acr_login_server 2>&1)
-          # Debug: Print the full raw output captured from the command.
+          # FIX: Using 'terraform' directly as it's added to PATH by setup-terraform action.
+          # This is the most reliable way to call Terraform in GitHub Actions.
+          FULL_COMMAND_OUTPUT=$(terraform -chdir=terraform/infra output -raw acr_login_server 2>&1)
           echo "::debug::FULL_COMMAND_OUTPUT captured: '$FULL_COMMAND_OUTPUT'"
-          # Extract the ACR login server using grep with a regular expression.
-          # -oE: Prints only the matched parts, extended regex.
-          # '[a-zA-Z0-9.-]+\.azurecr\.io': This regex specifically matches domain names
-          #    ending in '.azurecr.io', which is the expected format for ACR login servers.
-          # head -n 1: Ensures only the first match is taken, in case multiple lines
-          #    contain similar patterns (highly unlikely for this specific output).
           ACR_NAME=$(echo "$FULL_COMMAND_OUTPUT" | grep -oE '[a-zA-Z0-9.-]+\.azurecr\.io' | head -n 1)
-          # Debug: Print the extracted ACR_NAME after regex filtering.
           echo "::debug::ACR_NAME extracted after regex: '$ACR_NAME'"
-          # Write the key-value pair to GITHUB_OUTPUT.
-          # Using printf for explicit newline control is generally safer.
-          # We are no longer adding quotes here, as the regex should provide a clean value,
-          # and adding quotes might cause issues with GitHub Actions' internal parsing
-          # if it expects a raw string.
           printf "acr_login_server=%s\n" "$ACR_NAME" >> "$GITHUB_OUTPUT"
-          # Debug: Show the exact content that was written to GITHUB_OUTPUT file.
           echo "::debug::Content written to GITHUB_OUTPUT file:"
           cat "$GITHUB_OUTPUT"
 
@@ -123,7 +108,7 @@ jobs:
         run: |
           set -euo pipefail
           CONNECTION_STRING=$(terraform -chdir=terraform/infra output -raw cosmosdb_workflow_connection_string 2>&1 | head -n 1 | tr -d '\r')
-          printf "cosmosdb_workflow_connection_string=%s\n" "$CONNECTION_STRING" >> "$GITHUB_OUTPUT"
+          printf "cosmosdb_workflow_connection_string=%s\n" "$CONNECTION_OUTPUT"
 
       - name: Get Redis Cache Connection String
         id: redis_output
