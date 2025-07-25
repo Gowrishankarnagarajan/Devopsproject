@@ -1,10 +1,7 @@
-variable "prefix" {
-  type    = string
-  default = "gs"
-}
-
+# terraform/infra/variables.tf
 
 variable "location" {
-  type    = string
-  default = "UK South"
+  description = "The Azure region to deploy resources."
+  type        = string
+  default     = "uksouth" # You can change this to your preferred region
 }

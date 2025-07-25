@@ -1,0 +1,12 @@
+{
+  "name": "drone-scheduler-service",
+  "version": "1.0.0",
+  "description": "Sample Drone Scheduler Microservice",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2"
+  }
+}

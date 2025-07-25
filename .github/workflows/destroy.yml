@@ -1,33 +1,84 @@
-name: Terraform Destroy
+# .github/workflows/destroy-environment.yaml
+name: Destroy Azure Environment
 
 on:
   workflow_dispatch:
+    inputs:
+      resource_group_name:
+        description: 'Name of the Resource Group to destroy (e.g., aca-rg-abcdef)'
+        required: true
+        type: string
+      location:
+        description: 'Azure region of the Resource Group (e.g., uksouth)'
+        required: true
+        type: string
 
 permissions:
   contents: read
-  id-token: write
+  id-token: write # Required for Azure Login with OIDC
 
 jobs:
-  destroy:
-    name: Destroy Infrastructure
+  destroy-environment:
+    name: Destroy Terraform Provisioned Resources
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout Code
-      uses: actions/checkout@v3
+      - name: Checkout Code
+        uses: actions/checkout@v3
 
-    - name: Azure Login
-      uses: azure/login@v1
-      with:
-        creds: ${{ secrets.AZURE_CREDENTIALS }}
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-    - name: Setup Terraform
-      uses: hashicorp/setup-terraform@v2
-      with:
-        terraform_version: 1.5.7
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
 
-    - name: Terraform Init
-      run: terraform init
+      - name: Set Resource Group Prefix for Apps
+        id: set_rg_prefix
+        run: |
+          set -euo pipefail
+          # Derive the resource_group_name_prefix from the input resource_group_name
+          RG_NAME="${{ github.event.inputs.resource_group_name }}"
+          RG_NAME_PREFIX=$(echo "$RG_NAME" | sed -E 's/^aca-rg-//')
+          echo "resource_group_name_prefix=$RG_NAME_PREFIX" >> "$GITHUB_OUTPUT"
 
-    - name: Terraform Destroy
-      run: terraform destroy -auto-approve
+      - name: Terraform Init (Apps)
+        run: terraform -chdir=terraform/apps init
+
+      - name: Terraform Destroy (Apps)
+        # Destroy apps first, as they depend on the environment and other infra.
+        run: |
+          set -euxo pipefail
+          terraform -chdir=terraform/apps destroy -auto-approve \
+            -var="resource_group_name=${{ github.event.inputs.resource_group_name }}" \
+            -var="location=${{ github.event.inputs.location }}" \
+            -var="resource_group_name_prefix=${{ steps.set_rg_prefix.outputs.resource_group_name_prefix }}" \
+            -var="acr_login_server=dummy.azurecr.io" \
+            -var="log_analytics_workspace_id=00000000-0000-0000-0000-000000000000" \
+            -var="servicebus_namespace_name=dummy-sb" \
+            -var="servicebus_connection_string=Endpoint=sb://dummy.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=dummykey" \
+            -var="cosmosdb_mongodb_connection_string=mongodb://dummy:dummy@dummy.mongo.cosmos.azure.com:10255/?ssl=true&replicaSet=globaldb" \
+            -var="cosmosdb_workflow_connection_string=mongodb://dummy:dummy@dummy.mongo.cosmos.azure.com:10255/?ssl=true&replicaSet=globaldb" \
+            -var="redis_connection_string=dummy.redis.cache.windows.net:6380,password=dummy,ssl=True,abortConnect=False" \
+            -var="application_insights_connection_string=InstrumentationKey=00000000-0000-0000-0000-000000000000;IngestionEndpoint=https://uksouth-0.in.applicationinsights.azure.com/;LiveEndpoint=https://uksouth.livediagnostics.monitor.azure.com/" \
+            -var="key_vault_uri=https://dummy.vault.azure.net/" \
+            -var="ingestion_image=dummy/ingestion:latest" \
+            -var="workflow_image=dummy/workflow:latest" \
+            -var="package_image=dummy/package:latest" \
+            -var="drone_scheduler_image=dummy/drone-scheduler:latest" \
+            -var="delivery_image=dummy/delivery:latest"
+          # Dummy values are provided for variables that are not used during destroy
+          # but are required by the variables.tf file.
+
+      - name: Terraform Init (Infra)
+        run: terraform -chdir=terraform/infra init
+
+      - name: Terraform Destroy (Infra)
+        # Destroy core infrastructure (RG, ACR, Log Analytics) last.
+        run: |
+          set -euxo pipefail
+          terraform -chdir=terraform/infra destroy -auto-approve \
+            -var="location=${{ github.event.inputs.location }}"
+          # Dummy values are provided for variables that are not used during destroy
+          # but are required by the variables.tf file.  

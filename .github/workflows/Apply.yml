@@ -1,4 +1,5 @@
-name: Terraform Provision & Deploy
+# .github/workflows/main.yaml
+name: Terraform Provision & Deploy Container Apps
 
 on:
   push:
@@ -6,15 +7,25 @@ on:
 
 permissions:
   contents: read
-  id-token: write
+  id-token: write # Required for Azure Login with OIDC
 
 jobs:
   provision-infra:
-    name: Provision ACR Infrastructure
+    name: Provision Core Infrastructure
     runs-on: ubuntu-latest
 
     outputs:
       acr_login_server: ${{ steps.acr_output.outputs.acr_login_server }}
+      log_analytics_workspace_id: ${{ steps.logs_output.outputs.log_analytics_workspace_id }}
+      resource_group_name: ${{ steps.rg_output.outputs.resource_group_name }}
+      location: ${{ steps.location_output.outputs.location }}
+      servicebus_namespace_name: ${{ steps.servicebus_output.outputs.servicebus_namespace_name }}
+      servicebus_connection_string: ${{ steps.servicebus_output.outputs.servicebus_connection_string }}
+      cosmosdb_mongodb_connection_string: ${{ steps.cosmosdb_mongodb_output.outputs.cosmosdb_mongodb_connection_string }}
+      cosmosdb_workflow_connection_string: ${{ steps.cosmosdb_workflow_output.outputs.cosmosdb_workflow_connection_string }}
+      redis_connection_string: ${{ steps.redis_output.outputs.redis_connection_string }}
+      application_insights_connection_string: ${{ steps.appinsights_output.outputs.application_insights_connection_string }}
+      key_vault_uri: ${{ steps.keyvault_output.outputs.key_vault_uri }}
 
     steps:
       - name: Checkout Code
@@ -28,54 +39,115 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v2
 
-      - name: Terraform Init
+      - name: Terraform Init (Infra)
         run: terraform -chdir=terraform/infra init
 
-      - name: Terraform Apply Infra
+      - name: Terraform Apply (Infra)
         run: terraform -chdir=terraform/infra apply -auto-approve
 
+      # --- Output Retrieval Steps for Infra ---
       - name: Get ACR Login Server
         id: acr_output
         run: |
           set -euo pipefail
-          
-          # Capture all output (stdout and stderr) from the direct binary execution.
-          # We explicitly use "$TERRAFORM_CLI_PATH"/terraform-bin to ensure we're running
-          # the core executable, not a shell alias or wrapper that might add extra text.
           FULL_COMMAND_OUTPUT=$("$TERRAFORM_CLI_PATH"/terraform-bin -chdir=terraform/infra output -raw acr_login_server 2>&1)
-          
-          # Debug: Print the full raw output captured from the command.
-          echo "::debug::FULL_COMMAND_OUTPUT captured: '$FULL_COMMAND_OUTPUT'"
-
-          # Extract the ACR login server using grep with a regular expression.
-          # -oE: Prints only the matched parts, extended regex.
-          # '[a-zA-Z0-9.-]+\.azurecr\.io': This regex specifically matches domain names
-          #    ending in '.azurecr.io', which is the expected format for ACR login servers.
-          # head -n 1: Ensures only the first match is taken, in case multiple lines
-          #    contain similar patterns (highly unlikely for this specific output).
           ACR_NAME=$(echo "$FULL_COMMAND_OUTPUT" | grep -oE '[a-zA-Z0-9.-]+\.azurecr\.io' | head -n 1)
-          
-          # Debug: Print the extracted ACR_NAME after regex filtering.
-          echo "::debug::ACR_NAME extracted after regex: '$ACR_NAME'"
-          
-          # Write the key-value pair to GITHUB_OUTPUT.
-          # Using printf for explicit newline control is generally safer.
-          # We are no longer adding quotes here, as the regex should provide a clean value,
-          # and adding quotes might cause issues with GitHub Actions' internal parsing
-          # if it expects a raw string.
           printf "acr_login_server=%s\n" "$ACR_NAME" >> "$GITHUB_OUTPUT"
-          
-          # Debug: Show the exact content that was written to GITHUB_OUTPUT file.
-          echo "::debug::Content written to GITHUB_OUTPUT file:"
-          cat "$GITHUB_OUTPUT"
 
-      - name: Debug ACR Login Server
-        run: echo "::notice::ACR is ${{ steps.acr_output.outputs.acr_login_server }}"
+      - name: Get Log Analytics Workspace ID
+        id: logs_output
+        run: |
+          set -euo pipefail
+          FULL_COMMAND_OUTPUT=$("$TERRAFORM_CLI_PATH"/terraform-bin -chdir=terraform/infra output -raw log_analytics_workspace_id 2>&1)
+          LOG_ID=$(echo "$FULL_COMMAND_OUTPUT" | grep -oE '[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}' | head -n 1)
+          printf "log_analytics_workspace_id=%s\n" "$LOG_ID" >> "$GITHUB_OUTPUT"
 
-  push-image:
-    name: Build & Push Docker Image
+      - name: Get Resource Group Name
+        id: rg_output
+        run: |
+          set -euo pipefail
+          FULL_COMMAND_OUTPUT=$("$TERRAFORM_CLI_PATH"/terraform-bin -chdir=terraform/infra output -raw resource_group_name 2>&1)
+          RG_NAME=$(echo "$FULL_COMMAND_OUTPUT" | head -n 1 | tr -d '\r')
+          printf "resource_group_name=%s\n" "$RG_NAME" >> "$GITHUB_OUTPUT"
+
+      - name: Get Location
+        id: location_output
+        run: |
+          set -euo pipefail
+          FULL_COMMAND_OUTPUT=$("$TERRAFORM_CLI_PATH"/terraform-bin -chdir=terraform/infra output -raw location 2>&1)
+          LOCATION=$(echo "$FULL_COMMAND_OUTPUT" | head -n 1 | tr -d '\r')
+          printf "location=%s\n" "$LOCATION" >> "$GITHUB_OUTPUT"
+
+      - name: Get Service Bus Namespace Name & Connection String
+        id: servicebus_output
+        run: |
+          set -euo pipefail
+          NAMESPACE_NAME=$("$TERRAFORM_CLI_PATH"/terraform-bin -chdir=terraform/infra output -raw servicebus_namespace_name 2>&1 | head -n 1 | tr -d '\r')
+          CONNECTION_STRING=$("$TERRAFORM_CLI_PATH"/terraform-bin -chdir=terraform/infra output -raw servicebus_connection_string 2>&1 | head -n 1 | tr -d '\r')
+          printf "servicebus_namespace_name=%s\n" "$NAMESPACE_NAME" >> "$GITHUB_OUTPUT"
+          printf "servicebus_connection_string=%s\n" "$CONNECTION_STRING" >> "$GITHUB_OUTPUT"
+
+      - name: Get Cosmos DB MongoDB Connection String
+        id: cosmosdb_mongodb_output
+        run: |
+          set -euo pipefail
+          CONNECTION_STRING=$("$TERRAFORM_CLI_PATH"/terraform-bin -chdir=terraform/infra output -raw cosmosdb_mongodb_connection_string 2>&1 | head -n 1 | tr -d '\r')
+          printf "cosmosdb_mongodb_connection_string=%s\n" "$CONNECTION_STRING" >> "$GITHUB_OUTPUT"
+
+      - name: Get Cosmos DB Workflow Connection String
+        id: cosmosdb_workflow_output
+        run: |
+          set -euo pipefail
+          CONNECTION_STRING=$("$TERRAFORM_CLI_PATH"/terraform-bin -chdir=terraform/infra output -raw cosmosdb_workflow_connection_string 2>&1 | head -n 1 | tr -d '\r')
+          printf "cosmosdb_workflow_connection_string=%s\n" "$CONNECTION_STRING" >> "$GITHUB_OUTPUT"
+
+      - name: Get Redis Cache Connection String
+        id: redis_output
+        run: |
+          set -euo pipefail
+          CONNECTION_STRING=$("$TERRAFORM_CLI_PATH"/terraform-bin -chdir=terraform/infra output -raw redis_connection_string 2>&1 | head -n 1 | tr -d '\r')
+          printf "redis_connection_string=%s\n" "$CONNECTION_STRING" >> "$GITHUB_OUTPUT"
+
+      - name: Get Application Insights Connection String
+        id: appinsights_output
+        run: |
+          set -euo pipefail
+          CONNECTION_STRING=$("$TERRAFORM_CLI_PATH"/terraform-bin -chdir=terraform/infra output -raw application_insights_connection_string 2>&1 | head -n 1 | tr -d '\r')
+          printf "application_insights_connection_string=%s\n" "$CONNECTION_STRING" >> "$GITHUB_OUTPUT"
+
+      - name: Get Key Vault URI
+        id: keyvault_output
+        run: |
+          set -euo pipefail
+          KEY_VAULT_URI=$("$TERRAFORM_CLI_PATH"/terraform-bin -chdir=terraform/infra output -raw key_vault_uri 2>&1 | head -n 1 | tr -d '\r')
+          printf "key_vault_uri=%s\n" "$KEY_VAULT_URI" >> "$GITHUB_OUTPUT"
+      # --- End Output Retrieval Steps ---
+
+      - name: Debug Provisioning Outputs
+        run: |
+          echo "::notice::ACR Login Server: ${{ steps.acr_output.outputs.acr_login_server }}"
+          echo "::notice::Log Analytics Workspace ID: ${{ steps.logs_output.outputs.log_analytics_workspace_id }}"
+          echo "::notice::Resource Group Name: ${{ steps.rg_output.outputs.resource_group_name }}"
+          echo "::notice::Location: ${{ steps.location_output.outputs.location }}"
+          echo "::notice::Service Bus Namespace Name: ${{ steps.servicebus_output.outputs.servicebus_namespace_name }}"
+          echo "::notice::Cosmos DB MongoDB Connection String: ${{ steps.cosmosdb_mongodb_output.outputs.cosmosdb_mongodb_connection_string }}"
+          echo "::notice::Cosmos DB Workflow Connection String: ${{ steps.cosmosdb_workflow_output.outputs.cosmosdb_workflow_connection_string }}"
+          echo "::notice::Redis Connection String: ${{ steps.redis_output.outputs.redis_connection_string }}"
+          echo "::notice::Application Insights Connection String: ${{ steps.appinsights_output.outputs.application_insights_connection_string }}"
+          echo "::notice::Key Vault URI: ${{ steps.keyvault_output.outputs.key_vault_uri }}"
+
+
+  build-and-push-images:
+    name: Build & Push Docker Images
     runs-on: ubuntu-latest
     needs: provision-infra
+
+    outputs:
+      ingestion_image: ${{ steps.push_ingestion.outputs.image_name }}
+      workflow_image: ${{ steps.push_workflow.outputs.image_name }}
+      package_image: ${{ steps.push_package.outputs.image_name }}
+      drone_scheduler_image: ${{ steps.push_drone_scheduler.outputs.image_name }}
+      delivery_image: ${{ steps.push_delivery.outputs.image_name }}
 
     steps:
       - name: Checkout Code
@@ -86,44 +158,89 @@ jobs:
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      - name: Docker Build & Push
+      - name: Set ACR Variable
+        id: set_acr_var
+        run: |
+          ACR="${{ needs.provision-infra.outputs.acr_login_server }}"
+          echo "ACR_LOGIN_SERVER=$ACR" >> "$GITHUB_ENV"
+
+      - name: Docker Login to ACR
         run: |
           set -euxo pipefail
-          # The ACR variable should now correctly receive the clean string from the previous job's output.
-          ACR="${{ needs.provision-infra.outputs.acr_login_server }}"
-          
-          # Debug: Print the value of ACR received in this job.
-          echo "::debug::ACR received in push-image job: '$ACR'"
-          
-          # --- Start of Dockerfile Path Debugging and Correction ---
-          echo "::debug::Listing contents of ./sourcecode/ingestion/ to verify Dockerfile presence:"
-          # List contents of the directory where Dockerfile is expected.
-          # '|| true' prevents the step from failing if the directory is empty or doesn't exist.
-          ls -l ./sourcecode/ingestion/ || true 
-          
-          # Define the expected Dockerfile path based on your input.
-          DOCKERFILE_PATH="./sourcecode/ingestion/DockerFile"
-
-          # Explicitly check if the Dockerfile exists at the specified path and with the correct casing.
-          if [ ! -f "$DOCKERFILE_PATH" ]; then
-            echo "::error::Dockerfile not found at the expected path: $DOCKERFILE_PATH"
-            echo "::error::Please ensure your Dockerfile is named 'DockerFile' (case-sensitive) and is directly inside the 'sourcecode/ingestion' directory."
-            exit 1 # Exit the step with an error if Dockerfile is not found
-          fi
-          # --- End of Dockerfile Path Debugging and Correction ---
-
-          # Extract ACR name for 'az acr login' (e.g., "gsacrsfx7ou" from "gsacrsfx7ou.azurecr.io")
-          ACR_NAME=$(echo "$ACR" | cut -d. -f1)
-          
+          ACR_NAME=$(echo "$ACR_LOGIN_SERVER" | cut -d. -f1)
           az acr login --name "$ACR_NAME"
-          # Use the -f flag to specify the exact Dockerfile path.
-          docker build -t "$ACR/ingestion:latest" -f "$DOCKERFILE_PATH" ./sourcecode/ingestion
-          docker push "$ACR/ingestion:latest"
+
+      # --- Build & Push Steps for Each Microservice ---
+      - name: Build & Push Ingestion Image
+        id: push_ingestion
+        run: |
+          set -euxo pipefail
+          IMAGE_NAME="${{ env.ACR_LOGIN_SERVER }}/ingestion:latest"
+          if [ ! -f "./sourcecode/ingestion/Dockerfile" ]; then
+            echo "::error::Dockerfile not found for ingestion at: ./sourcecode/ingestion/Dockerfile"
+            exit 1
+          fi
+          docker build -t "$IMAGE_NAME" -f ./sourcecode/ingestion/Dockerfile ./sourcecode/ingestion
+          docker push "$IMAGE_NAME"
+          echo "image_name=$IMAGE_NAME" >> "$GITHUB_OUTPUT"
+
+      - name: Build & Push Workflow Image
+        id: push_workflow
+        run: |
+          set -euxo pipefail
+          IMAGE_NAME="${{ env.ACR_LOGIN_SERVER }}/workflow:latest"
+          if [ ! -f "./sourcecode/workflow/Dockerfile" ]; then
+            echo "::error::Dockerfile not found for workflow at: ./sourcecode/workflow/Dockerfile"
+            exit 1
+          fi
+          docker build -t "$IMAGE_NAME" -f ./sourcecode/workflow/Dockerfile ./sourcecode/workflow
+          docker push "$IMAGE_NAME"
+          echo "image_name=$IMAGE_NAME" >> "$GITHUB_OUTPUT"
+
+      - name: Build & Push Package Image
+        id: push_package
+        run: |
+          set -euxo pipefail
+          IMAGE_NAME="${{ env.ACR_LOGIN_SERVER }}/package:latest"
+          if [ ! -f "./sourcecode/package/Dockerfile" ]; then
+            echo "::error::Dockerfile not found for package at: ./sourcecode/package/Dockerfile"
+            exit 1
+          fi
+          docker build -t "$IMAGE_NAME" -f ./sourcecode/package/Dockerfile ./sourcecode/package
+          docker push "$IMAGE_NAME"
+          echo "image_name=$IMAGE_NAME" >> "$GITHUB_OUTPUT"
+
+      - name: Build & Push Drone Scheduler Image
+        id: push_drone_scheduler
+        run: |
+          set -euxo pipefail
+          IMAGE_NAME="${{ env.ACR_LOGIN_SERVER }}/drone-scheduler:latest"
+          if [ ! -f "./sourcecode/drone-scheduler/Dockerfile" ]; then
+            echo "::error::Dockerfile not found for drone-scheduler at: ./sourcecode/drone-scheduler/Dockerfile"
+            exit 1
+          fi
+          docker build -t "$IMAGE_NAME" -f ./sourcecode/drone-scheduler/Dockerfile ./sourcecode/drone-scheduler
+          docker push "$IMAGE_NAME"
+          echo "image_name=$IMAGE_NAME" >> "$GITHUB_OUTPUT"
+
+      - name: Build & Push Delivery Image
+        id: push_delivery
+        run: |
+          set -euxo pipefail
+          IMAGE_NAME="${{ env.ACR_LOGIN_SERVER }}/delivery:latest"
+          if [ ! -f "./sourcecode/delivery/Dockerfile" ]; then
+            echo "::error::Dockerfile not found for delivery at: ./sourcecode/delivery/Dockerfile"
+            exit 1
+          fi
+          docker build -t "$IMAGE_NAME" -f ./sourcecode/delivery/Dockerfile ./sourcecode/delivery
+          docker push "$IMAGE_NAME"
+          echo "image_name=$IMAGE_NAME" >> "$GITHUB_OUTPUT"
+      # --- End Build & Push Steps ---
 
   deploy-apps:
-    name: Deploy Container App
+    name: Deploy Container Apps
     runs-on: ubuntu-latest
-    needs: push-image
+    needs: [provision-infra, build-and-push-images]
 
     steps:
       - name: Checkout Code
@@ -137,8 +254,35 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v2
 
-      - name: Terraform Init & Apply
+      - name: Terraform Init & Apply (Apps)
         run: |
           set -euxo pipefail
+          RG_NAME="${{ needs.provision-infra.outputs.resource_group_name }}"
+          RG_NAME_PREFIX=$(echo "$RG_NAME" | sed -E 's/^aca-rg-//')
+          
           terraform -chdir=terraform/apps init
-          terraform -chdir=terraform/apps apply -auto-approve -var="acr_login_server=${{ needs.provision-infra.outputs.acr_login_server }}"
+          terraform -chdir=terraform/apps apply -auto-approve \
+            -var="acr_login_server=${{ needs.provision-infra.outputs.acr_login_server }}" \
+            -var="log_analytics_workspace_id=${{ needs.provision-infra.outputs.log_analytics_workspace_id }}" \
+            -var="resource_group_name=${{ needs.provision-infra.outputs.resource_group_name }}" \
+            -var="location=${{ needs.provision-infra.outputs.location }}" \
+            -var="resource_group_name_prefix=$RG_NAME_PREFIX" \
+            -var="servicebus_namespace_name=${{ needs.provision-infra.outputs.servicebus_namespace_name }}" \
+            -var="servicebus_connection_string=${{ needs.provision-infra.outputs.servicebus_connection_string }}" \
+            -var="cosmosdb_mongodb_connection_string=${{ needs.provision-infra.outputs.cosmosdb_mongodb_connection_string }}" \
+            -var="cosmosdb_workflow_connection_string=${{ needs.provision-infra.outputs.cosmosdb_workflow_connection_string }}" \
+            -var="redis_connection_string=${{ needs.provision-infra.outputs.redis_connection_string }}" \
+            -var="application_insights_connection_string=${{ needs.provision-infra.outputs.application_insights_connection_string }}" \
+            -var="key_vault_uri=${{ needs.provision-infra.outputs.key_vault_uri }}" \
+            -var="ingestion_image=${{ needs.build-and-push-images.outputs.ingestion_image }}" \
+            -var="workflow_image=${{ needs.build-and-push-images.outputs.workflow_image }}" \
+            -var="package_image=${{ needs.build-and-push-images.outputs.package_image }}" \
+            -var="drone_scheduler_image=${{ needs.build-and-push-images.outputs.drone_scheduler_image }}" \
+            -var="delivery_image=${{ needs.build-and-push-images.outputs.delivery_image }}"
+
+      - name: Get Ingestion App FQDN
+        run: |
+          set -euo pipefail
+          # Assuming you'll have an output named 'ingestion_fqdn' in terraform/apps
+          INGESTION_FQDN=$("$TERRAFORM_CLI_PATH"/terraform-bin -chdir=terraform/apps output -raw ingestion_fqdn 2>&1)
+          echo "::notice::Ingestion Container App URL: $INGESTION_FQDN"
