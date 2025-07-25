@@ -1,7 +1,3 @@
-# terraform/infra/main.tf
-
-
-
 resource "random_string" "suffix" {
   length  = 6
   special = false
@@ -23,7 +19,7 @@ resource "azurerm_log_analytics_workspace" "logs" {
 }
 
 resource "azurerm_container_registry" "acr" {
-  name                = "acaregistry${random_string.suffix.result}" # ACR names must be globally unique and alphanumeric
+  name                = "acaregistry${random_string.suffix.result}"
   resource_group_name = azurerm_resource_group.rg.name
   location            = azurerm_resource_group.rg.location
   sku                 = "Basic"
@@ -87,10 +83,9 @@ resource "azurerm_redis_cache" "redis_cache" {
   name                = "acaredis-${random_string.suffix.result}"
   location            = azurerm_resource_group.rg.location
   resource_group_name = azurerm_resource_group.rg.name
-  capacity            = 1 # C0 Basic (smallest size)
+  capacity            = 1
   family              = "C"
   sku_name            = "Basic"
-  # Corrected: Use 'non_ssl_port_enabled' instead of 'enable_non_ssl_port'
   non_ssl_port_enabled = false
   minimum_tls_version = "1.2"
 }
@@ -113,7 +108,21 @@ resource "azurerm_key_vault" "key_vault" {
   purge_protection_enabled    = false
 }
 
+# Data source to get the current client's (GitHub Actions Service Principal) configuration
 data "azurerm_client_config" "current" {}
+
+# Grant the GitHub Actions Service Principal (current client) permissions on the Key Vault
+resource "azurerm_key_vault_access_policy" "github_actions_sp_policy" {
+  key_vault_id = azurerm_key_vault.key_vault.id
+  tenant_id    = data.azurerm_client_config.current.tenant_id
+  object_id    = data.azurerm_client_config.current.object_id # The OID from the error message
+
+  secret_permissions = [
+    "Get", "List", "Set", "Delete", "Recover", "Backup", "Restore" # Full secret management
+  ]
+  # You can add other permissions (e.g., "Get", "List" for keys/certificates) if needed
+}
+
 
 resource "azurerm_key_vault_secret" "example_secret" {
   name         = "ExampleSecret"
