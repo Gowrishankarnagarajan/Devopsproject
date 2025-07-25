@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
 
     outputs:
-      acr_login_server: ${{ steps.acr_output.outputs.acr_name }}
+      acr_login_server: ${{ steps.acr_output.outputs.acr_login_server }}
 
     steps:
       - name: Checkout Code
@@ -34,15 +34,15 @@ jobs:
       - name: Terraform Apply Infra
         run: terraform -chdir=terraform/infra apply -auto-approve
 
+      - name: Get ACR Login Server
+        id: acr_output
+        run: |
+          ACR_NAME=$(terraform -chdir=terraform/infra output -raw acr_login_server)
+          echo "acr_login_server=$ACR_NAME" >> $GITHUB_OUTPUT
+
       - name: Debug ACR Login Server
         run: |
-         echo "ACR Login Server is: ${{ steps.acr_output.outputs.acr_login_server }}"
-
-      # - name: Get ACR Login Server
-      #   id: acr_output
-      #   run: |
-      #     ACR_NAME=$(terraform -chdir=terraform/infra output -raw acr_login_server)
-      #     echo "acr_name=$ACR_NAME" >> $GITHUB_OUTPUT
+          echo "ACR Login Server is: ${{ steps.acr_output.outputs.acr_login_server }}"
 
   push-image:
     name: Build & Push Docker Image
