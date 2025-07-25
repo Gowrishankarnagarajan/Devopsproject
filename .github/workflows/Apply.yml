@@ -49,9 +49,16 @@ jobs:
           #    making the extraction robust even if such prefixes reappear.
           ACR_NAME=$(echo "$RAW_ACR_OUTPUT" | tr -d '\r' | head -n 1 | cut -d':' -f1)
           
-          # Write the key-value pair to GITHUB_OUTPUT.
-          # Using printf for explicit newline control is generally safer than echo.
-          printf "acr_login_server=%s\n" "$ACR_NAME" >> "$GITHUB_OUTPUT"
+          # Debug: Print the extracted ACR_NAME before writing to GITHUB_OUTPUT
+          echo "::debug::ACR_NAME extracted: '$ACR_NAME'"
+          
+          # Write the key-value pair to GITHUB_OUTPUT, explicitly quoting the value.
+          # This is the most critical change, as it helps GitHub Actions parse the value correctly.
+          echo "acr_login_server=\"$ACR_NAME\"" >> "$GITHUB_OUTPUT"
+          
+          # Debug: Show the content that was written to GITHUB_OUTPUT
+          echo "::debug::Content written to GITHUB_OUTPUT:"
+          cat "$GITHUB_OUTPUT" || true # '|| true' prevents step failure if file is empty/not found (unlikely here)
 
       - name: Debug ACR Login Server
         run: echo "::notice::ACR is ${{ steps.acr_output.outputs.acr_login_server }}"
@@ -73,12 +80,22 @@ jobs:
       - name: Docker Build & Push
         run: |
           set -euxo pipefail
+          # The ACR variable should now correctly receive the quoted string from the previous job's output.
           ACR="${{ needs.provision-infra.outputs.acr_login_server }}"
+          
+          # Debug: Print the value of ACR received in this job
+          echo "::debug::ACR received in push-image job: '$ACR'"
+          
+          # Remove quotes from the ACR variable if they were added for output parsing.
+          # This ensures 'az acr login' and 'docker build' get a clean registry name.
+          CLEAN_ACR=$(echo "$ACR" | sed 's/"//g')
+          
           # Extract ACR name for 'az acr login'
-          ACR_NAME=$(echo "$ACR" | cut -d. -f1)
+          ACR_NAME=$(echo "$CLEAN_ACR" | cut -d. -f1)
+          
           az acr login --name "$ACR_NAME"
-          docker build -t "$ACR/ingestion:latest" ./sourcecode/ingestion
-          docker push "$ACR/ingestion:latest"
+          docker build -t "$CLEAN_ACR/ingestion:latest" ./sourcecode/ingestion
+          docker push "$CLEAN_ACR/ingestion:latest"
 
   deploy-apps:
     name: Deploy Container App
