@@ -126,27 +126,40 @@ resource "azurerm_key_vault_secret" "example_secret" {
   ]
 }
 
-# Existing Container Apps environment and services (no changes needed for these blocks themselves)
+# Container Apps Environment
 resource "azurerm_container_app_environment" "env" {
-  name                       = "aca-env-${var.resource_group_name_prefix}"
-  location                   = var.location
-  resource_group_name        = var.resource_group_name
-  log_analytics_workspace_id = azurerm_log_analytics_workspace.logs.id # Now reference the local logs resource
+  name                         = "aca-env-${var.resource_group_name_prefix}"
+  location                     = var.location
+  resource_group_name          = var.resource_group_name
+  log_analytics_workspace_id = azurerm_log_analytics_workspace.logs.id
 
-  # REMOVED: The identity block here as it's not supported for azurerm_container_app_environment
-  # identity {
-  #   type = "SystemAssigned"
-  # }
+  # Removed the 'container_registry' block with username/password
+  # as we are now using a User-Assigned Managed Identity per app for ACR pull.
 }
 
 # Data source to fetch the ACR details for role assignment
 data "azurerm_container_registry" "acr" {
   name                = split(".", var.acr_login_server)[0] # Extract ACR name from the login server URL
-  resource_group_name = var.resource_group_name             # Assuming ACR is in the same resource group as other apps resources
+  resource_group_name = var.resource_group_name              # Assuming ACR is in the same resource group as other apps resources
 }
 
-# REMOVED: azurerm_role_assignment.aca_env_acr_pull as the environment identity is not used for this.
-# Instead, each app's identity will be granted permissions.
+# NEW: User-Assigned Managed Identity for ACR Pull
+resource "azurerm_user_assigned_identity" "acr_pull_identity" {
+  name                = "uami-acr-pull-${random_string.suffix.result}"
+  resource_group_name = var.resource_group_name
+  location            = var.location
+}
+
+# NEW: Grant the User-Assigned Managed Identity AcrPull permission on the ACR
+resource "azurerm_role_assignment" "acr_pull_uami_role" {
+  scope                = data.azurerm_container_registry.acr.id
+  role_definition_name = "AcrPull"
+  principal_id         = azurerm_user_assigned_identity.acr_pull_identity.principal_id
+  depends_on = [
+    azurerm_user_assigned_identity.acr_pull_identity,
+    data.azurerm_container_registry.acr # Explicit dependency on data source for clarity
+  ]
+}
 
 # Ingestion Service Container App
 resource "azurerm_container_app" "ingestion_service" {
@@ -155,8 +168,15 @@ resource "azurerm_container_app" "ingestion_service" {
   resource_group_name          = var.resource_group_name
   revision_mode                = "Single"
 
+  # Keep SystemAssigned for Key Vault access if needed
   identity {
     type = "SystemAssigned"
+  }
+
+  # NEW: Configure ACR pull using the User-Assigned Managed Identity
+  registry {
+    server   = data.azurerm_container_registry.acr.login_server
+    identity = azurerm_user_assigned_identity.acr_pull_identity.id
   }
 
   template {
@@ -197,14 +217,7 @@ resource "azurerm_container_app" "ingestion_service" {
   }
 }
 
-# ADDED: Grant Ingestion Service Container App's Managed Identity AcrPull permission
-resource "azurerm_role_assignment" "ingestion_app_acr_pull" {
-  scope                = data.azurerm_container_registry.acr.id
-  role_definition_name = "AcrPull"
-  principal_id         = azurerm_container_app.ingestion_service.identity[0].principal_id
-  depends_on           = [azurerm_container_app.ingestion_service]
-}
-
+# REMOVED: azurerm_role_assignment for AcrPull for individual apps (now handled by UAMI)
 
 # Workflow Service Container App
 resource "azurerm_container_app" "workflow_service" {
@@ -215,6 +228,12 @@ resource "azurerm_container_app" "workflow_service" {
 
   identity {
     type = "SystemAssigned"
+  }
+
+  # NEW: Configure ACR pull using the User-Assigned Managed Identity
+  registry {
+    server   = data.azurerm_container_registry.acr.login_server
+    identity = azurerm_user_assigned_identity.acr_pull_identity.id
   }
 
   template {
@@ -255,14 +274,6 @@ resource "azurerm_container_app" "workflow_service" {
   }
 }
 
-# ADDED: Grant Workflow Service Container App's Managed Identity AcrPull permission
-resource "azurerm_role_assignment" "workflow_app_acr_pull" {
-  scope                = data.azurerm_container_registry.acr.id
-  role_definition_name = "AcrPull"
-  principal_id         = azurerm_container_app.workflow_service.identity[0].principal_id
-  depends_on           = [azurerm_container_app.workflow_service]
-}
-
 # Package Service Container App
 resource "azurerm_container_app" "package_service" {
   name                         = "package-service-${var.resource_group_name_prefix}"
@@ -272,6 +283,12 @@ resource "azurerm_container_app" "package_service" {
 
   identity {
     type = "SystemAssigned"
+  }
+
+  # NEW: Configure ACR pull using the User-Assigned Managed Identity
+  registry {
+    server   = data.azurerm_container_registry.acr.login_server
+    identity = azurerm_user_assigned_identity.acr_pull_identity.id
   }
 
   template {
@@ -308,15 +325,6 @@ resource "azurerm_container_app" "package_service" {
   }
 }
 
-# ADDED: Grant Package Service Container App's Managed Identity AcrPull permission
-resource "azurerm_role_assignment" "package_app_acr_pull" {
-  scope                = data.azurerm_container_registry.acr.id
-  role_definition_name = "AcrPull"
-  principal_id         = azurerm_container_app.package_service.identity[0].principal_id
-  depends_on           = [azurerm_container_app.package_service]
-}
-
-
 # Drone Scheduler Service Container App
 resource "azurerm_container_app" "drone_scheduler_service" {
   name                         = "drone-scheduler-service-${var.resource_group_name_prefix}"
@@ -326,6 +334,12 @@ resource "azurerm_container_app" "drone_scheduler_service" {
 
   identity {
     type = "SystemAssigned"
+  }
+
+  # NEW: Configure ACR pull using the User-Assigned Managed Identity
+  registry {
+    server   = data.azurerm_container_registry.acr.login_server
+    identity = azurerm_user_assigned_identity.acr_pull_identity.id
   }
 
   template {
@@ -362,15 +376,6 @@ resource "azurerm_container_app" "drone_scheduler_service" {
   }
 }
 
-# ADDED: Grant Drone Scheduler Service Container App's Managed Identity AcrPull permission
-resource "azurerm_role_assignment" "drone_scheduler_app_acr_pull" {
-  scope                = data.azurerm_container_registry.acr.id
-  role_definition_name = "AcrPull"
-  principal_id         = azurerm_container_app.drone_scheduler_service.identity[0].principal_id
-  depends_on           = [azurerm_container_app.drone_scheduler_service]
-}
-
-
 # Delivery Service Container App
 resource "azurerm_container_app" "delivery_service" {
   name                         = "delivery-service-${var.resource_group_name_prefix}"
@@ -380,6 +385,12 @@ resource "azurerm_container_app" "delivery_service" {
 
   identity {
     type = "SystemAssigned"
+  }
+
+  # NEW: Configure ACR pull using the User-Assigned Managed Identity
+  registry {
+    server   = data.azurerm_container_registry.acr.login_server
+    identity = azurerm_user_assigned_identity.acr_pull_identity.id
   }
 
   template {
@@ -406,7 +417,7 @@ resource "azurerm_container_app" "delivery_service" {
   }
 
   ingress {
-    external_enabled = false
+    external_enabled = true
     target_port      = 8084
     transport        = "auto"
     traffic_weight {
@@ -416,15 +427,8 @@ resource "azurerm_container_app" "delivery_service" {
   }
 }
 
-# ADDED: Grant Delivery Service Container App's Managed Identity AcrPull permission
-resource "azurerm_role_assignment" "delivery_app_acr_pull" {
-  scope                = data.azurerm_container_registry.acr.id
-  role_definition_name = "AcrPull"
-  principal_id         = azurerm_container_app.delivery_service.identity[0].principal_id
-  depends_on           = [azurerm_container_app.delivery_service]
-}
-
 # Set Key Vault Access Policies for each Container App's Managed Identity
+# These policies remain, as they are for Key Vault access, not ACR image pull.
 resource "azurerm_key_vault_access_policy" "ingestion_kv_policy" {
   key_vault_id = azurerm_key_vault.key_vault.id # Reference local Key Vault
   tenant_id    = azurerm_container_app.ingestion_service.identity[0].tenant_id

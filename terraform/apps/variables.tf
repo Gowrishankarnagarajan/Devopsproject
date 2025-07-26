@@ -20,18 +20,58 @@ variable "acr_login_server" {
   type        = string
 }
 
-# Remove all these variables as their corresponding resources are now in apps/main.tf
-/*
-variable "log_analytics_workspace_id" { ... }
-variable "servicebus_namespace_name" { ... }
-variable "servicebus_connection_string" { ... }
-variable "cosmosdb_mongodb_connection_string" { ... }
-variable "cosmosdb_workflow_connection_string" { ... }
-variable "redis_connection_string" { ... }
-variable "application_insights_connection_string" { ... }
-variable "key_vault_uri" { ... }
-variable "key_vault_id" { ... }
-*/
+# Removed variables for acr_username and acr_password as they are no longer used for Container App pull.
+# They are still output from infra and used in the build-and-push job for pushing.
+
+variable "log_analytics_workspace_id" {
+  description = "The ID of the Log Analytics Workspace."
+  type        = string
+}
+
+variable "servicebus_namespace_name" {
+  description = "The name of the Service Bus Namespace."
+  type        = string
+}
+
+variable "servicebus_connection_string" {
+  description = "The connection string for the Service Bus Namespace."
+  type        = string
+  sensitive   = true
+}
+
+variable "cosmosdb_mongodb_connection_string" {
+  description = "The connection string for the CosmosDB MongoDB API account."
+  type        = string
+  sensitive   = true
+}
+
+variable "cosmosdb_workflow_connection_string" {
+  description = "The connection string for the CosmosDB Workflow account."
+  type        = string
+  sensitive   = true
+}
+
+variable "redis_connection_string" {
+  description = "The connection string for the Redis Cache."
+  type        = string
+  sensitive   = true
+}
+
+variable "application_insights_connection_string" {
+  description = "The connection string for Application Insights."
+  type        = string
+  sensitive   = true
+}
+
+variable "key_vault_uri" {
+  description = "The URI of the Key Vault."
+  type        = string
+}
+
+variable "key_vault_id" {
+  description = "The ID of the Key Vault."
+  type        = string
+}
 
 variable "ingestion_image" {
   description = "The full Docker image name for the Ingestion service."
