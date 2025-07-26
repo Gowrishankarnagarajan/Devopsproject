@@ -33,12 +33,12 @@ resource "azurerm_container_registry" "acr" {
 data "azurerm_client_config" "current" {}
 
 # Grant the Service Principal 'AcrPush' permissions on the ACR
-# This is crucial for the 'build-and-push-images' job to succeed.
-resource "azurerm_role_assignment" "acr_push_permission" {
-  scope                = azurerm_container_registry.acr.id
-  role_definition_name = "AcrPush" # Allows pushing, pulling, and deleting images
-  principal_id         = data.azurerm_client_config.current.object_id # CORRECTED: Removed [0]
+# # This is crucial for the 'build-and-push-images' job to succeed.
+# resource "azurerm_role_assignment" "acr_push_permission" {
+#   scope                = azurerm_container_registry.acr.id
+#   role_definition_name = "AcrPush" # Allows pushing, pulling, and deleting images
+#   principal_id         = data.azurerm_client_config.current.object_id # CORRECTED: Removed [0]
   
-  # Ensure the ACR is created before trying to assign a role on it
-  depends_on = [azurerm_container_registry.acr] 
-}
+#   # Ensure the ACR is created before trying to assign a role on it
+#   depends_on = [azurerm_container_registry.acr] 
+# }
