@@ -183,15 +183,16 @@ jobs:
           printf "key_vault_id=%s\n" "$KEY_VAULT_ID" >> "$GITHUB_OUTPUT"
 
   build-and-push-images:
-    name: Build and Push Container Images
+    name: Build & Push Docker Images
     runs-on: ubuntu-latest
     needs: provision-infra
+
     outputs:
-      ingestion_image: ${{ steps.set_ingestion_image.outputs.image_name }}
-      workflow_image: ${{ steps.set_workflow_image.outputs.image_name }}
-      package_image: ${{ steps.set_package_image.outputs.image_name }}
-      drone_scheduler_image: ${{ steps.set_drone_scheduler_image.outputs.image_name }}
-      delivery_image: ${{ steps.set_delivery_image.outputs.image_name }}
+      ingestion_image: ${{ steps.push_ingestion.outputs.image_name }}
+      workflow_image: ${{ steps.push_workflow.outputs.image_name }}
+      package_image: ${{ steps.push_package.outputs.image_name }}
+      drone_scheduler_image: ${{ steps.push_drone_scheduler.outputs.image_name }}
+      delivery_image: ${{ steps.push_delivery.outputs.image_name }}
 
     steps:
       - name: Checkout Code
@@ -202,52 +203,102 @@ jobs:
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
+      - name: Set ACR Variable
+        # Simplified setting of ACR_LOGIN_SERVER into an environment variable
+        run: echo "ACR_LOGIN_SERVER=${{ needs.provision-infra.outputs.acr_login_server }}" >> "$GITHUB_ENV"
+
       - name: Docker Login to ACR
-        uses: azure/docker-login@v1
-        with:
-          login-server: ${{ needs.provision-infra.outputs.acr_login_server }}
-          username: ${{ secrets.AZURE_CONTAINER_REGISTRY_USERNAME }}
-          password: ${{ secrets.AZURE_CONTAINER_REGISTRY_PASSWORD }}
-
-      - name: Build and Push Ingestion Image
         run: |
-          docker build -t ${{ needs.provision-infra.outputs.acr_login_server }}/ingestion-service:${{ github.sha }} ./src/Ingestion
-          docker push ${{ needs.provision-infra.outputs.acr_login_server }}/ingestion-service:${{ github.sha }}
-      - name: Set Ingestion Image Output
-        id: set_ingestion_image
-        run: echo "image_name=${{ needs.provision-infra.outputs.acr_login_server }}/ingestion-service:${{ github.sha }}" >> "$GITHUB_OUTPUT"
+          set -euo pipefail
+          ACR_NAME=$(echo "$ACR_LOGIN_SERVER" | cut -d. -f1)
+          az acr login --name "$ACR_NAME"
 
-      - name: Build and Push Workflow Image
+      # --- Build & Push Steps for Each Microservice ---
+      - name: Build & Push Ingestion Image
+        id: push_ingestion
         run: |
-          docker build -t ${{ needs.provision-infra.outputs.acr_login_server }}/workflow-service:${{ github.sha }} ./src/Workflow
-          docker push ${{ needs.provision-infra.outputs.acr_login_server }}/workflow-service:${{ github.sha }}
-      - name: Set Workflow Image Output
-        id: set_workflow_image
-        run: echo "image_name=${{ needs.provision-infra.outputs.acr_login_server }}/workflow-service:${{ github.sha }}" >> "$GITHUB_OUTPUT"
+          set -euo pipefail
+          # Debugging: List contents of sourcecode directory to verify Dockerfile path
+          echo "::debug::Listing contents of ./sourcecode/ingestion/:"
+          ls -R ./sourcecode/ingestion/ || true # Use || true to prevent step failure if directory is empty or path is wrong initially
+          
+          IMAGE_NAME="${{ env.ACR_LOGIN_SERVER }}/ingestion:latest"
+          if [ ! -f "./sourcecode/ingestion/Dockerfile" ]; then
+            echo "::error::Dockerfile not found for ingestion at: ./sourcecode/ingestion/Dockerfile. Please check your repository structure."
+            exit 1
+          fi
+          docker build -t "$IMAGE_NAME" -f ./sourcecode/ingestion/Dockerfile ./sourcecode/ingestion
+          docker push "$IMAGE_NAME"
+          echo "image_name=$IMAGE_NAME" >> "$GITHUB_OUTPUT"
 
-      - name: Build and Push Package Image
+      - name: Build & Push Workflow Image
+        id: push_workflow
         run: |
-          docker build -t ${{ needs.provision-infra.outputs.acr_login_server }}/package-service:${{ github.sha }} ./src/Package
-          docker push ${{ needs.provision-infra.outputs.acr_login_server }}/package-service:${{ github.sha }}
-      - name: Set Package Image Output
-        id: set_package_image
-        run: echo "image_name=${{ needs.provision-infra.outputs.acr_login_server }}/package-service:${{ github.sha }}" >> "$GITHUB_OUTPUT"
+          set -euo pipefail
+          # Debugging: List contents of sourcecode directory to verify Dockerfile path
+          echo "::debug::Listing contents of ./sourcecode/workflow/:"
+          ls -R ./sourcecode/workflow/ || true # Use || true to prevent step failure if directory is empty or path is wrong initially
+          
+          IMAGE_NAME="${{ env.ACR_LOGIN_SERVER }}/workflow:latest"
+          if [ ! -f "./sourcecode/workflow/Dockerfile" ]; then
+            echo "::error::Dockerfile not found for workflow at: ./sourcecode/workflow/Dockerfile. Please check your repository structure."
+            exit 1
+          fi
+          docker build -t "$IMAGE_NAME" -f ./sourcecode/workflow/Dockerfile ./sourcecode/workflow
+          docker push "$IMAGE_NAME"
+          echo "image_name=$IMAGE_NAME" >> "$GITHUB_OUTPUT"
 
-      - name: Build and Push Drone Scheduler Image
+      - name: Build & Push Package Image
+        id: push_package
         run: |
-          docker build -t ${{ needs.provision-infra.outputs.acr_login_server }}/drone-scheduler-service:${{ github.sha }} ./src/DroneScheduler
-          docker push ${{ needs.provision-infra.outputs.acr_login_server }}/drone-scheduler-service:${{ github.sha }}
-      - name: Set Drone Scheduler Image Output
-        id: set_drone_scheduler_image
-        run: echo "image_name=${{ needs.provision-infra.outputs.acr_login_server }}/drone-scheduler-service:${{ github.sha }}" >> "$GITHUB_OUTPUT"
+          set -euo pipefail
+          # Debugging: List contents of sourcecode directory to verify Dockerfile path
+          echo "::debug::Listing contents of ./sourcecode/package/:"
+          ls -R ./sourcecode/package/ || true # Use || true to prevent step failure if directory is empty or path is wrong initially
+          
+          IMAGE_NAME="${{ env.ACR_LOGIN_SERVER }}/package:latest"
+          if [ ! -f "./sourcecode/package/Dockerfile" ]; then
+            echo "::error::Dockerfile not found for package at: ./sourcecode/package/Dockerfile. Please check your repository structure."
+            exit 1
+          fi
+          docker build -t "$IMAGE_NAME" -f ./sourcecode/package/Dockerfile ./sourcecode/package
+          docker push "$IMAGE_NAME"
+          echo "image_name=$IMAGE_NAME" >> "$GITHUB_OUTPUT"
 
-      - name: Build and Push Delivery Image
+      - name: Build & Push Drone Scheduler Image
+        id: push_drone_scheduler
         run: |
-          docker build -t ${{ needs.provision-infra.outputs.acr_login_server }}/delivery-service:${{ github.sha }} ./src/Delivery
-          docker push ${{ needs.provision-infra.outputs.acr_login_server }}/delivery-service:${{ github.sha }}
-      - name: Set Delivery Image Output
-        id: set_delivery_image
-        run: echo "image_name=${{ needs.provision-infra.outputs.acr_login_server }}/delivery-service:${{ github.sha }}" >> "$GITHUB_OUTPUT"
+          set -euo pipefail
+          # Debugging: List contents of sourcecode directory to verify Dockerfile path
+          echo "::debug::Listing contents of ./sourcecode/drone-scheduler/:"
+          ls -R ./sourcecode/drone-scheduler/ || true # Use || true to prevent step failure if directory is empty or path is wrong initially
+          
+          IMAGE_NAME="${{ env.ACR_LOGIN_SERVER }}/drone-scheduler:latest"
+          if [ ! -f "./sourcecode/drone-scheduler/Dockerfile" ]; then
+            echo "::error::Dockerfile not found for drone-scheduler at: ./sourcecode/drone-scheduler/Dockerfile. Please check your repository structure."
+            exit 1
+          fi
+          docker build -t "$IMAGE_NAME" -f ./sourcecode/drone-scheduler/Dockerfile ./sourcecode/drone-scheduler
+          docker push "$IMAGE_NAME"
+          echo "image_name=$IMAGE_NAME" >> "$GITHUB_OUTPUT"
+
+      - name: Build & Push Delivery Image
+        id: push_delivery
+        run: |
+          set -euo pipefail
+          # Debugging: List contents of sourcecode directory to verify Dockerfile path
+          echo "::debug::Listing contents of ./sourcecode/delivery/:"
+          ls -R ./sourcecode/delivery/ || true # Use || true to prevent step failure if directory is empty or path is wrong initially
+          
+          IMAGE_NAME="${{ env.ACR_LOGIN_SERVER }}/delivery:latest"
+          if [ ! -f "./sourcecode/delivery/Dockerfile" ]; then
+            echo "::error::Dockerfile not found for delivery at: ./sourcecode/delivery/Dockerfile. Please check your repository structure."
+            exit 1
+          fi
+          docker build -t "$IMAGE_NAME" -f ./sourcecode/delivery/Dockerfile ./sourcecode/delivery
+          docker push "$IMAGE_NAME"
+          echo "image_name=$IMAGE_NAME" >> "$GITHUB_OUTPUT"
+      # --- End Build & Push Steps ---
 
   deploy-apps:
     name: Deploy Container Apps
