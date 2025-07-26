@@ -69,9 +69,11 @@ jobs:
         run: |
           set -euo pipefail
           # Debugging: Print the raw output for Log Analytics Workspace ID
+          # Removed the grep to ensure the full resource ID is captured.
           RAW_LOG_ID_OUTPUT=$(terraform -chdir=terraform/infra output -raw log_analytics_workspace_id 2>&1)
           echo "::debug::Raw Log Analytics Workspace ID Output: '$RAW_LOG_ID_OUTPUT'"
-          LOG_ID=$(echo "$RAW_LOG_ID_OUTPUT" | grep -oE '[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}' | head -n 1)
+          # LOG_ID=$(echo "$RAW_LOG_ID_OUTPUT" | grep -oE '[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}' | head -n 1) # REMOVED THIS LINE
+          LOG_ID=$(echo "$RAW_LOG_ID_OUTPUT" | head -n 1 | tr -d '\r') # Capture full string and remove newlines
           echo "::debug::Extracted Log Analytics Workspace ID: '$LOG_ID'"
           printf "log_analytics_workspace_id=%s\n" "$LOG_ID" >> "$GITHUB_OUTPUT"
 
@@ -221,7 +223,7 @@ jobs:
           # Debugging: List contents of sourcecode directory to verify Dockerfile path
           echo "::debug::Listing contents of ./sourcecode/ingestion/:"
           ls -R ./sourcecode/ingestion/ || true # Use || true to prevent step failure if directory is empty or path is wrong initially
-          
+
           IMAGE_NAME="${{ env.ACR_LOGIN_SERVER }}/ingestion:latest"
           if [ ! -f "./sourcecode/ingestion/Dockerfile" ]; then
             echo "::error::Dockerfile not found for ingestion at: ./sourcecode/ingestion/Dockerfile. Please check your repository structure."
@@ -238,7 +240,7 @@ jobs:
           # Debugging: List contents of sourcecode directory to verify Dockerfile path
           echo "::debug::Listing contents of ./sourcecode/workflow/:"
           ls -R ./sourcecode/workflow/ || true # Use || true to prevent step failure if directory is empty or path is wrong initially
-          
+
           IMAGE_NAME="${{ env.ACR_LOGIN_SERVER }}/workflow:latest"
           if [ ! -f "./sourcecode/workflow/Dockerfile" ]; then
             echo "::error::Dockerfile not found for workflow at: ./sourcecode/workflow/Dockerfile. Please check your repository structure."
@@ -255,7 +257,7 @@ jobs:
           # Debugging: List contents of sourcecode directory to verify Dockerfile path
           echo "::debug::Listing contents of ./sourcecode/package/:"
           ls -R ./sourcecode/package/ || true # Use || true to prevent step failure if directory is empty or path is wrong initially
-          
+
           IMAGE_NAME="${{ env.ACR_LOGIN_SERVER }}/package:latest"
           if [ ! -f "./sourcecode/package/Dockerfile" ]; then
             echo "::error::Dockerfile not found for package at: ./sourcecode/package/Dockerfile. Please check your repository structure."
@@ -272,7 +274,7 @@ jobs:
           # Debugging: List contents of sourcecode directory to verify Dockerfile path
           echo "::debug::Listing contents of ./sourcecode/drone-scheduler/:"
           ls -R ./sourcecode/drone-scheduler/ || true # Use || true to prevent step failure if directory is empty or path is wrong initially
-          
+
           IMAGE_NAME="${{ env.ACR_LOGIN_SERVER }}/drone-scheduler:latest"
           if [ ! -f "./sourcecode/drone-scheduler/Dockerfile" ]; then
             echo "::error::Dockerfile not found for drone-scheduler at: ./sourcecode/drone-scheduler/Dockerfile. Please check your repository structure."
@@ -289,7 +291,7 @@ jobs:
           # Debugging: List contents of sourcecode directory to verify Dockerfile path
           echo "::debug::Listing contents of ./sourcecode/delivery/:"
           ls -R ./sourcecode/delivery/ || true # Use || true to prevent step failure if directory is empty or path is wrong initially
-          
+
           IMAGE_NAME="${{ env.ACR_LOGIN_SERVER }}/delivery:latest"
           if [ ! -f "./sourcecode/delivery/Dockerfile" ]; then
             echo "::error::Dockerfile not found for delivery at: ./sourcecode/delivery/Dockerfile. Please check your repository structure."
@@ -327,36 +329,82 @@ jobs:
         run: |
           set -euo pipefail
           # Derive the resource_group_name_prefix from the provisioned resource_group_name
-          RG_NAME="${{ needs.provision-infra.outputs.resource_group_name }}"
+          # Ensure no carriage returns interfere with sed.
+          RG_NAME=$(echo "${{ needs.provision-infra.outputs.resource_group_name }}" | tr -d '\r')
           RG_NAME_PREFIX=$(echo "$RG_NAME" | sed -E 's/^aca-rg-//')
           printf "resource_group_name_prefix=%s\n" "$RG_NAME_PREFIX" >> "$GITHUB_OUTPUT"
+          echo "::debug::resource_group_name_prefix set to: $RG_NAME_PREFIX"
 
       - name: Terraform Apply (Apps)
         run: |
           set -euo pipefail # Kept for robustness
+
+          # Capture outputs from previous jobs into shell variables
+          LOCATION="${{ needs.provision-infra.outputs.location }}"
+          RESOURCE_GROUP_NAME="${{ needs.provision-infra.outputs.resource_group_name }}"
+          LOG_ANALYTICS_WORKSPACE_ID="${{ needs.provision-infra.outputs.log_analytics_workspace_id }}"
+          ACR_LOGIN_SERVER="${{ needs.provision-infra.outputs.acr_login_server }}"
+          SERVICEBUS_NAMESPACE_NAME="${{ needs.provision-infra.outputs.servicebus_namespace_name }}"
+          SERVICEBUS_CONNECTION_STRING="${{ needs.provision-infra.outputs.servicebus_connection_string }}"
+          COSMOSDB_MONGODB_CONNECTION_STRING="${{ needs.provision-infra.outputs.cosmosdb_mongodb_connection_string }}"
+          COSMOSDB_WORKFLOW_CONNECTION_STRING="${{ needs.provision-infra.outputs.cosmosdb_workflow_connection_string }}"
+          REDIS_CONNECTION_STRING="${{ needs.provision-infra.outputs.redis_connection_string }}"
+          APPLICATION_INSIGHTS_CONNECTION_STRING="${{ needs.provision-infra.outputs.application_insights_connection_string }}"
+          KEY_VAULT_URI="${{ needs.provision-infra.outputs.key_vault_uri }}"
+          KEY_VAULT_ID="${{ needs.provision-infra.outputs.key_vault_id }}"
+          INGESTION_IMAGE="${{ needs.build-and-push-images.outputs.ingestion_image }}"
+          WORKFLOW_IMAGE="${{ needs.build-and-push-images.outputs.workflow_image }}"
+          PACKAGE_IMAGE="${{ needs.build-and-push-images.outputs.package_image }}"
+          DRONE_SCHEDULER_IMAGE="${{ needs.build-and-push-images.outputs.drone_scheduler_image }}"
+          DELIVERY_IMAGE="${{ needs.build-and-push-images.outputs.delivery_image }}"
+
+          # Get the resource_group_name_prefix from its own step output
+          RESOURCE_GROUP_NAME_PREFIX="${{ steps.set_rg_prefix.outputs.resource_group_name_prefix }}"
+
+
+          # Debugging: Print all variables to ensure they are captured correctly
+          echo "::debug::LOCATION: $LOCATION"
+          echo "::debug::RESOURCE_GROUP_NAME: $RESOURCE_GROUP_NAME"
+          echo "::debug::RESOURCE_GROUP_NAME_PREFIX: $RESOURCE_GROUP_NAME_PREFIX"
+          echo "::debug::LOG_ANALYTICS_WORKSPACE_ID: $LOG_ANALYTICS_WORKSPACE_ID"
+          echo "::debug::ACR_LOGIN_SERVER: $ACR_LOGIN_SERVER"
+          echo "::debug::SERVICEBUS_NAMESPACE_NAME: $SERVICEBUS_NAMESPACE_NAME"
+          echo "::debug::SERVICEBUS_CONNECTION_STRING: ${SERVICEBUS_CONNECTION_STRING:0:20}..." # Truncate sensitive data
+          echo "::debug::COSMOSDB_MONGODB_CONNECTION_STRING: ${COSMOSDB_MONGODB_CONNECTION_STRING:0:20}..."
+          echo "::debug::COSMOSDB_WORKFLOW_CONNECTION_STRING: ${COSMOSDB_WORKFLOW_CONNECTION_STRING:0:20}..."
+          echo "::debug::REDIS_CONNECTION_STRING: ${REDIS_CONNECTION_STRING:0:20}..."
+          echo "::debug::APPLICATION_INSIGHTS_CONNECTION_STRING: ${APPLICATION_INSIGHTS_CONNECTION_STRING:0:20}..."
+          echo "::debug::KEY_VAULT_URI: $KEY_VAULT_URI"
+          echo "::debug::KEY_VAULT_ID: $KEY_VAULT_ID"
+          echo "::debug::INGESTION_IMAGE: $INGESTION_IMAGE"
+          echo "::debug::WORKFLOW_IMAGE: $WORKFLOW_IMAGE"
+          echo "::debug::PACKAGE_IMAGE: $PACKAGE_IMAGE"
+          echo "::debug::DRONE_SCHEDULER_IMAGE: $DRONE_SCHEDULER_IMAGE"
+          echo "::debug::DELIVERY_IMAGE: $DELIVERY_IMAGE"
+
+
           terraform -chdir=terraform/apps apply -auto-approve \
-            -var="location=${{ needs.provision-infra.outputs.location }}" \
-            -var="resource_group_name=${{ needs.provision-infra.outputs.resource_group_name }}" \
-            -var="resource_group_name_prefix=${{ steps.set_rg_prefix.outputs.resource_group_name_prefix }}" \
-            -var="log_analytics_workspace_id=${{ needs.provision-infra.outputs.log_analytics_workspace_id }}" \
-            -var="acr_login_server=${{ needs.provision-infra.outputs.acr_login_server }}" \
-            -var="servicebus_namespace_name=${{ needs.provision-infra.outputs.servicebus_namespace_name }}" \
-            -var="servicebus_connection_string=${{ needs.provision-infra.outputs.servicebus_connection_string }}" \
-            -var="cosmosdb_mongodb_connection_string=${{ needs.provision-infra.outputs.cosmosdb_mongodb_connection_string }}" \
-            -var="cosmosdb_workflow_connection_string=${{ needs.provision-infra.outputs.cosmosdb_workflow_connection_string }}" \
-            -var="redis_connection_string=${{ needs.provision-infra.outputs.redis_connection_string }}" \
-            -var="application_insights_connection_string=${{ needs.provision-infra.outputs.application_insights_connection_string }}" \
-            -var="key_vault_uri=${{ needs.provision-infra.outputs.key_vault_uri }}" \
-            -var="key_vault_id=${{ needs.provision-infra.outputs.key_vault_id }}" \
-            -var="ingestion_image=${{ needs.build-and-push-images.outputs.ingestion_image }}" \
-            -var="workflow_image=${{ needs.build-and-push-images.outputs.workflow_image }}" \
-            -var="package_image=${{ needs.build-and-push-images.outputs.package_image }}" \
-            -var="drone_scheduler_image=${{ needs.build-and-push-images.outputs.drone_scheduler_image }}" \
-            -var="delivery_image=${{ needs.build-and-push-images.outputs.delivery_image }}"
+            -var="location=$LOCATION" \
+            -var="resource_group_name=$RESOURCE_GROUP_NAME" \
+            -var="resource_group_name_prefix=$RESOURCE_GROUP_NAME_PREFIX" \
+            -var="log_analytics_workspace_id=$LOG_ANALYTICS_WORKSPACE_ID" \
+            -var="acr_login_server=$ACR_LOGIN_SERVER" \
+            -var="servicebus_namespace_name=$SERVICEBUS_NAMESPACE_NAME" \
+            -var="servicebus_connection_string=$SERVICEBUS_CONNECTION_STRING" \
+            -var="cosmosdb_mongodb_connection_string=$COSMOSDB_MONGODB_CONNECTION_STRING" \
+            -var="cosmosdb_workflow_connection_string=$COSMOSDB_WORKFLOW_CONNECTION_STRING" \
+            -var="redis_connection_string=$REDIS_CONNECTION_STRING" \
+            -var="application_insights_connection_string=$APPLICATION_INSIGHTS_CONNECTION_STRING" \
+            -var="key_vault_uri=$KEY_VAULT_URI" \
+            -var="key_vault_id=$KEY_VAULT_ID" \
+            -var="ingestion_image=$INGESTION_IMAGE" \
+            -var="workflow_image=$WORKFLOW_IMAGE" \
+            -var="package_image=$PACKAGE_IMAGE" \
+            -var="drone_scheduler_image=$DRONE_SCHEDULER_IMAGE" \
+            -var="delivery_image=$DELIVERY_IMAGE"
 
       - name: Get Ingestion App FQDN
         run: |
           set -euo pipefail # Kept for robustness
           INGESTION_FQDN=$(terraform -chdir=terraform/apps output -raw ingestion_fqdn)
           echo "Ingestion App FQDN: $INGESTION_FQDN"
-          
