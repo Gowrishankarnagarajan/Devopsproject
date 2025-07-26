@@ -88,13 +88,11 @@ jobs:
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }} # Using 'creds' here too for consistency if desired
 
-      - name: ACR Login
-        uses: azure/docker-login@v1
-        with:
-          login-server: ${{ needs.provision-infra.outputs.acr_login_server }}
-          # Use client ID and client secret for Docker login with Service Principal
-          username: ${{ secrets.AZURE_CLIENT_ID }}
-          password: ${{ secrets.AZURE_CLIENT_SECRET }} 
+      - name: Docker Login to ACR
+        run: |
+          set -euo pipefail
+          ACR_NAME=$(echo "$ACR_LOGIN_SERVER" | cut -d. -f1)
+          az acr login --name "$ACR_NAME"
 
       - name: Set Image Tag
         id: set_image_tag
