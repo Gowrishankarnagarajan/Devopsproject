@@ -24,3 +24,6 @@ output "delivery_fqdn_internal" {
   description = "The internal fully qualified domain name of the Delivery Container App."
   value       = azurerm_container_app.delivery_service.ingress[0].fqdn
 }
+
+# Remove all infrastructure outputs (connection strings, IDs, URIs) from here.
+# They are now internal to the apps module or its internal outputs if needed for external consumption.

@@ -15,60 +15,23 @@ variable "resource_group_name_prefix" {
   type        = string
 }
 
-variable "log_analytics_workspace_id" {
-  description = "The ID of the Log Analytics Workspace for Container Apps logging."
-  type        = string
-}
-
 variable "acr_login_server" {
   description = "The login server URL for the Azure Container Registry."
   type        = string
 }
 
-variable "servicebus_namespace_name" {
-  description = "The name of the Service Bus Namespace."
-  type        = string
-}
-
-variable "servicebus_connection_string" {
-  description = "The primary connection string for the Service Bus Namespace."
-  type        = string
-  sensitive   = true
-}
-
-variable "cosmosdb_mongodb_connection_string" {
-  description = "The connection string for the MongoDB API Cosmos DB account."
-  type        = string
-  sensitive   = true
-}
-
-variable "cosmosdb_workflow_connection_string" {
-  description = "The connection string for the Workflow Cosmos DB account."
-  type        = string
-  sensitive   = true
-}
-
-variable "redis_connection_string" {
-  description = "The primary connection string for the Redis Cache."
-  type        = string
-  sensitive   = true
-}
-
-variable "application_insights_connection_string" {
-  description = "The connection string for Application Insights."
-  type        = string
-  sensitive   = true
-}
-
-variable "key_vault_uri" {
-  description = "The URI of the Key Vault."
-  type        = string
-}
-
-variable "key_vault_id" {
-  description = "The ID of the Key Vault (needed for access policies)."
-  type        = string
-}
+# Remove all these variables as their corresponding resources are now in apps/main.tf
+/*
+variable "log_analytics_workspace_id" { ... }
+variable "servicebus_namespace_name" { ... }
+variable "servicebus_connection_string" { ... }
+variable "cosmosdb_mongodb_connection_string" { ... }
+variable "cosmosdb_workflow_connection_string" { ... }
+variable "redis_connection_string" { ... }
+variable "application_insights_connection_string" { ... }
+variable "key_vault_uri" { ... }
+variable "key_vault_id" { ... }
+*/
 
 variable "ingestion_image" {
   description = "The full Docker image name for the Ingestion service."
@@ -90,7 +53,6 @@ variable "drone_scheduler_image" {
   type        = string
 }
 
-#variable
 variable "delivery_image" {
   description = "The full Docker image name for the Delivery service."
   type        = string

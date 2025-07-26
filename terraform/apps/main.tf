@@ -1,12 +1,137 @@
 # terraform/apps/main.tf
-# This file contains the main configuration for Azure Container Apps
-# It defines the Container Apps environment and individual services
+# This file contains the main configuration for Azure Container Apps and related infrastructure
+
+resource "random_string" "suffix" {
+  length  = 6
+  special = false
+  upper   = false
+  numeric = true
+}
+
+# All the infrastructure resources that were previously in terraform/infra/main.tf
+# are now moved here:
+
+resource "azurerm_log_analytics_workspace" "logs" {
+  name                = "aca-logs-${random_string.suffix.result}"
+  location            = var.location
+  resource_group_name = var.resource_group_name # Use the passed-in resource group
+  sku                 = "PerGB2018"
+  retention_in_days   = 30
+  lifecycle {
+    ignore_changes = []
+  }
+}
+
+resource "azurerm_servicebus_namespace" "sb_namespace" {
+  name                = "acasbns-${random_string.suffix.result}"
+  location            = var.location
+  resource_group_name = var.resource_group_name
+  sku                 = "Standard"
+}
+
+resource "azurerm_servicebus_queue" "ingestion_queue" {
+  name         = "ingestion-queue"
+  namespace_id = azurerm_servicebus_namespace.sb_namespace.id
+}
+
+resource "azurerm_servicebus_queue" "workflow_queue" {
+  name         = "workflow-queue"
+  namespace_id = azurerm_servicebus_namespace.sb_namespace.id
+}
+
+resource "azurerm_cosmosdb_account" "cosmosdb_mongodb" {
+  name                = "acacosmosmongodb${random_string.suffix.result}"
+  location            = var.location
+  resource_group_name = var.resource_group_name
+  offer_type          = "Standard"
+  kind                = "MongoDB"
+
+  consistency_policy {
+    consistency_level = "Session"
+  }
+
+  geo_location {
+    location          = var.location
+    failover_priority = 0
+  }
+}
+
+resource "azurerm_cosmosdb_account" "cosmosdb_workflow" {
+  name                = "acacosmosworkflow${random_string.suffix.result}"
+  location            = var.location
+  resource_group_name = var.resource_group_name
+  offer_type          = "Standard"
+  kind                = "GlobalDocumentDB"
+
+  consistency_policy {
+    consistency_level = "Session"
+  }
+
+  geo_location {
+    location          = var.location
+    failover_priority = 0
+  }
+}
+
+resource "azurerm_redis_cache" "redis_cache" {
+  name                = "acaredis-${random_string.suffix.result}"
+  location            = var.location
+  resource_group_name = var.resource_group_name
+  capacity            = 1
+  family              = "C"
+  sku_name            = "Basic"
+  minimum_tls_version = "1.2"
+}
+
+resource "azurerm_application_insights" "app_insights" {
+  name                = "aca-appinsights-${random_string.suffix.result}"
+  location            = var.location
+  resource_group_name = var.resource_group_name
+  application_type    = "web"
+  workspace_id        = azurerm_log_analytics_workspace.logs.id
+}
+
+resource "azurerm_key_vault" "key_vault" {
+  name                        = "acakeyvault${random_string.suffix.result}"
+  location                    = var.location
+  resource_group_name         = var.resource_group_name
+  tenant_id                   = data.azurerm_client_config.current.tenant_id
+  sku_name                    = "standard"
+  enabled_for_disk_encryption = false
+  purge_protection_enabled    = false
+}
+
+# Data source to get the current client's (GitHub Actions Service Principal) configuration
+data "azurerm_client_config" "current" {}
+
+# Grant the GitHub Actions Service Principal (current client) permissions on the Key Vault
+resource "azurerm_key_vault_access_policy" "github_actions_sp_policy" {
+  key_vault_id = azurerm_key_vault.key_vault.id
+  tenant_id    = data.azurerm_client_config.current.tenant_id
+  object_id    = data.azurerm_client_config.current.object_id
+  secret_permissions = [
+    "Get", "List", "Set", "Delete", "Recover", "Backup", "Restore"
+  ]
+  depends_on = [
+    azurerm_key_vault.key_vault
+  ]
+}
+
+resource "azurerm_key_vault_secret" "example_secret" {
+  name         = "ExampleSecret"
+  value        = "my-super-secret-value"
+  key_vault_id = azurerm_key_vault.key_vault.id
+  depends_on = [
+    azurerm_key_vault_access_policy.github_actions_sp_policy
+  ]
+}
+
+# Existing Container Apps environment and services (no changes needed for these blocks themselves)
 resource "azurerm_container_app_environment" "env" {
   name                       = "aca-env-${var.resource_group_name_prefix}"
   location                   = var.location
   resource_group_name        = var.resource_group_name
-  log_analytics_workspace_id = var.log_analytics_workspace_id
-  # infrastructure_subnet_id     = null # Optional, for VNet integration
+  log_analytics_workspace_id = azurerm_log_analytics_workspace.logs.id # Now reference the local logs resource
 }
 
 # Ingestion Service Container App
@@ -16,7 +141,6 @@ resource "azurerm_container_app" "ingestion_service" {
   resource_group_name          = var.resource_group_name
   revision_mode                = "Single"
 
-  # Managed Identity for accessing Key Vault and other Azure services
   identity {
     type = "SystemAssigned"
   }
@@ -29,24 +153,21 @@ resource "azurerm_container_app" "ingestion_service" {
       memory = "1.0Gi"
       env {
         name  = "SERVICEBUS_CONNECTION_STRING"
-        value = var.servicebus_connection_string
+        value = azurerm_servicebus_namespace.sb_namespace.default_primary_connection_string # Reference local Service Bus
       }
       env {
         name  = "COSMOSDB_MONGODB_CONNECTION_STRING"
-        value = var.cosmosdb_mongodb_connection_string
+        value = azurerm_cosmosdb_account.cosmosdb_mongodb.connection_strings[0] # Reference local CosmosDB
       }
       env {
         name  = "APPLICATIONINSIGHTS_CONNECTION_STRING"
-        value = var.application_insights_connection_string
+        value = azurerm_application_insights.app_insights.connection_string # Reference local App Insights
       }
       env {
         name  = "KEY_VAULT_URI"
-        value = var.key_vault_uri
+        value = azurerm_key_vault.key_vault.vault_uri # Reference local Key Vault
       }
     }
-    # FIX: For azurerm provider version 3.64.0, min_replicas and max_replicas
-    # are direct attributes of the 'template' block. The 'replica' and 'scale'
-    # blocks for advanced scaling were introduced in later versions.
     min_replicas = 1
     max_replicas = 5
   }
@@ -54,8 +175,7 @@ resource "azurerm_container_app" "ingestion_service" {
   ingress {
     external_enabled = true
     target_port      = 8080
-    # FIX: Changed "Auto" to "auto" as required by the provider schema
-    transport = "auto"
+    transport        = "auto"
     traffic_weight {
       percentage      = 100
       latest_revision = true
@@ -82,23 +202,21 @@ resource "azurerm_container_app" "workflow_service" {
       memory = "1.0Gi"
       env {
         name  = "SERVICEBUS_CONNECTION_STRING"
-        value = var.servicebus_connection_string
+        value = azurerm_servicebus_namespace.sb_namespace.default_primary_connection_string
       }
       env {
         name  = "COSMOSDB_WORKFLOW_CONNECTION_STRING"
-        value = var.cosmosdb_workflow_connection_string
+        value = azurerm_cosmosdb_account.cosmosdb_workflow.connection_strings[0]
       }
       env {
         name  = "APPLICATIONINSIGHTS_CONNECTION_STRING"
-        value = var.application_insights_connection_string
+        value = azurerm_application_insights.app_insights.connection_string
       }
       env {
         name  = "KEY_VAULT_URI"
-        value = var.key_vault_uri
+        value = azurerm_key_vault.key_vault.vault_uri
       }
     }
-    # FIX: For azurerm provider version 3.64.0, min_replicas and max_replicas
-    # are direct attributes of the 'template' block.
     min_replicas = 1
     max_replicas = 3
   }
@@ -106,8 +224,7 @@ resource "azurerm_container_app" "workflow_service" {
   ingress {
     external_enabled = false
     target_port      = 8081
-    # FIX: Changed "Auto" to "auto" as required by the provider schema
-    transport = "auto"
+    transport        = "auto"
     traffic_weight {
       percentage      = 100
       latest_revision = true
@@ -134,19 +251,17 @@ resource "azurerm_container_app" "package_service" {
       memory = "0.5Gi"
       env {
         name  = "COSMOSDB_MONGODB_CONNECTION_STRING"
-        value = var.cosmosdb_mongodb_connection_string
+        value = azurerm_cosmosdb_account.cosmosdb_mongodb.connection_strings[0]
       }
       env {
         name  = "APPLICATIONINSIGHTS_CONNECTION_STRING"
-        value = var.application_insights_connection_string
+        value = azurerm_application_insights.app_insights.connection_string
       }
       env {
         name  = "KEY_VAULT_URI"
-        value = var.key_vault_uri
+        value = azurerm_key_vault.key_vault.vault_uri
       }
     }
-    # FIX: For azurerm provider version 3.64.0, min_replicas and max_replicas
-    # are direct attributes of the 'template' block.
     min_replicas = 1
     max_replicas = 2
   }
@@ -154,8 +269,7 @@ resource "azurerm_container_app" "package_service" {
   ingress {
     external_enabled = false
     target_port      = 8082
-    # FIX: Changed "Auto" to "auto" as required by the provider schema
-    transport = "auto"
+    transport        = "auto"
     traffic_weight {
       percentage      = 100
       latest_revision = true
@@ -182,19 +296,17 @@ resource "azurerm_container_app" "drone_scheduler_service" {
       memory = "0.5Gi"
       env {
         name  = "REDIS_CONNECTION_STRING"
-        value = var.redis_connection_string
+        value = azurerm_redis_cache.redis_cache.primary_connection_string
       }
       env {
         name  = "APPLICATIONINSIGHTS_CONNECTION_STRING"
-        value = var.application_insights_connection_string
+        value = azurerm_application_insights.app_insights.connection_string
       }
       env {
         name  = "KEY_VAULT_URI"
-        value = var.key_vault_uri
+        value = azurerm_key_vault.key_vault.vault_uri
       }
     }
-    # FIX: For azurerm provider version 3.64.0, min_replicas and max_replicas
-    # are direct attributes of the 'template' block.
     min_replicas = 1
     max_replicas = 2
   }
@@ -202,8 +314,7 @@ resource "azurerm_container_app" "drone_scheduler_service" {
   ingress {
     external_enabled = false
     target_port      = 8083
-    # FIX: Changed "Auto" to "auto" as required by the provider schema
-    transport = "auto"
+    transport        = "auto"
     traffic_weight {
       percentage      = 100
       latest_revision = true
@@ -230,19 +341,17 @@ resource "azurerm_container_app" "delivery_service" {
       memory = "0.5Gi"
       env {
         name  = "COSMOSDB_MONGODB_CONNECTION_STRING"
-        value = var.cosmosdb_mongodb_connection_string
+        value = azurerm_cosmosdb_account.cosmosdb_mongodb.connection_strings[0]
       }
       env {
         name  = "APPLICATIONINSIGHTS_CONNECTION_STRING"
-        value = var.application_insights_connection_string
+        value = azurerm_application_insights.app_insights.connection_string
       }
       env {
         name  = "KEY_VAULT_URI"
-        value = var.key_vault_uri
+        value = azurerm_key_vault.key_vault.vault_uri
       }
     }
-    # FIX: For azurerm provider version 3.64.0, min_replicas and max_replicas
-    # are direct attributes of the 'template' block.
     min_replicas = 1
     max_replicas = 2
   }
@@ -250,8 +359,7 @@ resource "azurerm_container_app" "delivery_service" {
   ingress {
     external_enabled = false
     target_port      = 8084
-    # FIX: Changed "Auto" to "auto" as required by the provider schema
-    transport = "auto"
+    transport        = "auto"
     traffic_weight {
       percentage      = 100
       latest_revision = true
@@ -259,55 +367,68 @@ resource "azurerm_container_app" "delivery_service" {
   }
 }
 
-
 # Set Key Vault Access Policies for each Container App's Managed Identity
-# This grants the Container App's system-assigned managed identity permissions to Key Vault
 resource "azurerm_key_vault_access_policy" "ingestion_kv_policy" {
-  key_vault_id = var.key_vault_id
+  key_vault_id = azurerm_key_vault.key_vault.id # Reference local Key Vault
   tenant_id    = azurerm_container_app.ingestion_service.identity[0].tenant_id
   object_id    = azurerm_container_app.ingestion_service.identity[0].principal_id
 
   secret_permissions = [
     "Get", "List"
   ]
+  depends_on = [
+    azurerm_container_app.ingestion_service
+  ]
 }
 
 resource "azurerm_key_vault_access_policy" "workflow_kv_policy" {
-  key_vault_id = var.key_vault_id
+  key_vault_id = azurerm_key_vault.key_vault.id # Reference local Key Vault
   tenant_id    = azurerm_container_app.workflow_service.identity[0].tenant_id
   object_id    = azurerm_container_app.workflow_service.identity[0].principal_id
 
   secret_permissions = [
     "Get", "List"
   ]
+  depends_on = [
+    azurerm_container_app.workflow_service
+  ]
 }
 
 resource "azurerm_key_vault_access_policy" "package_kv_policy" {
-  key_vault_id = var.key_vault_id
+  key_vault_id = azurerm_key_vault.key_vault.id # Reference local Key Vault
   tenant_id    = azurerm_container_app.package_service.identity[0].tenant_id
   object_id    = azurerm_container_app.package_service.identity[0].principal_id
 
   secret_permissions = [
     "Get", "List"
   ]
+  depends_on = [
+    azurerm_container_app.package_service
+  ]
 }
 
 resource "azurerm_key_vault_access_policy" "drone_scheduler_kv_policy" {
-  key_vault_id = var.key_vault_id
+  key_vault_id = azurerm_key_vault.key_vault.id # Reference local Key Vault
   tenant_id    = azurerm_container_app.drone_scheduler_service.identity[0].tenant_id
   object_id    = azurerm_container_app.drone_scheduler_service.identity[0].principal_id
 
   secret_permissions = [
     "Get", "List"
   ]
+  depends_on = [
+    azurerm_container_app.drone_scheduler_service
+  ]
 }
 
 resource "azurerm_key_vault_access_policy" "delivery_kv_policy" {
-  key_vault_id = var.key_vault_id
+  key_vault_id = azurerm_key_vault.key_vault.id # Reference local Key Vault
   tenant_id    = azurerm_container_app.delivery_service.identity[0].tenant_id
   object_id    = azurerm_container_app.delivery_service.identity[0].principal_id
 
   secret_permissions = [
     "Get", "List"
+  ]
+  depends_on = [
+    azurerm_container_app.delivery_service
   ]
 }
