@@ -80,20 +80,38 @@ jobs:
       delivery_image: ${{ steps.delivery_image.outputs.image }}
 
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
+      - name: Checkout Code
+        uses: actions/checkout@v3
 
       - name: Azure Login
         uses: azure/login@v1
         with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }} # Using 'creds' here too for consistency if desired
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Set ACR Variable
+        run: |
+          set -euo pipefail
+          # Capture the output from provision-infra job
+          ACR_SERVER_FROM_OUTPUT="${{ needs.provision-infra.outputs.acr_login_server }}"
+          
+          # Verify that the value is not empty
+          if [ -z "$ACR_SERVER_FROM_OUTPUT" ]; then
+            echo "::error::ACR_LOGIN_SERVER output from 'provision-infra' job is empty. Cannot proceed with Docker login."
+            exit 1
+          fi
+          
+          # Set the environment variable
+          echo "ACR_LOGIN_SERVER=$ACR_SERVER_FROM_OUTPUT" >> "$GITHUB_ENV"
+          echo "::debug::ACR_LOGIN_SERVER set in GITHUB_ENV: $ACR_SERVER_FROM_OUTPUT"
 
       - name: Docker Login to ACR
         run: |
           set -euo pipefail
+          echo "::debug::Attempting Docker login with ACR_LOGIN_SERVER: '$ACR_LOGIN_SERVER'"
           ACR_NAME=$(echo "$ACR_LOGIN_SERVER" | cut -d. -f1)
           az acr login --name "$ACR_NAME"
 
+      # ... (rest of the build-and-push-images job steps)
       - name: Set Image Tag
         id: set_image_tag
         run: echo "IMAGE_TAG=$(echo ${{ github.sha }} | cut -c1-7)" >> "$GITHUB_ENV"
