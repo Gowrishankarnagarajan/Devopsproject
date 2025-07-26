@@ -132,17 +132,14 @@ resource "azurerm_container_app_environment" "env" {
   location                   = var.location
   resource_group_name        = var.resource_group_name
   log_analytics_workspace_id = azurerm_log_analytics_workspace.logs.id # Now reference the local logs resource
-
-  # REMOVED: The identity block here as it's not supported for azurerm_container_app_environment
-  # identity {
-  #   type = "SystemAssigned"
-  # }
+  depends_on                 = [azurerm_log_analytics_workspace.logs]
 }
 
 # Data source to fetch the ACR details for role assignment
 data "azurerm_container_registry" "acr" {
   name                = split(".", var.acr_login_server)[0] # Extract ACR name from the login server URL
-  resource_group_name = var.resource_group_name             # Assuming ACR is in the same resource group as other apps resources
+  resource_group_name = var.resource_group_name
+
 }
 
 # REMOVED: azurerm_role_assignment.aca_env_acr_pull as the environment identity is not used for this.
@@ -154,6 +151,7 @@ resource "azurerm_container_app" "ingestion_service" {
   container_app_environment_id = azurerm_container_app_environment.env.id
   resource_group_name          = var.resource_group_name
   revision_mode                = "Single"
+  depends_on                   = [azurerm_container_app_environment.env]
 
   identity {
     type = "SystemAssigned"
@@ -212,6 +210,7 @@ resource "azurerm_container_app" "workflow_service" {
   container_app_environment_id = azurerm_container_app_environment.env.id
   resource_group_name          = var.resource_group_name
   revision_mode                = "Single"
+  depends_on                   = [azurerm_container_app_environment.env]
 
   identity {
     type = "SystemAssigned"
@@ -270,6 +269,7 @@ resource "azurerm_container_app" "package_service" {
   resource_group_name          = var.resource_group_name
   revision_mode                = "Single"
 
+  depends_on = [azurerm_container_app_environment.env]
   identity {
     type = "SystemAssigned"
   }
@@ -324,6 +324,7 @@ resource "azurerm_container_app" "drone_scheduler_service" {
   resource_group_name          = var.resource_group_name
   revision_mode                = "Single"
 
+  depends_on = [azurerm_container_app_environment.env]
   identity {
     type = "SystemAssigned"
   }
@@ -377,6 +378,7 @@ resource "azurerm_container_app" "delivery_service" {
   container_app_environment_id = azurerm_container_app_environment.env.id
   resource_group_name          = var.resource_group_name
   revision_mode                = "Single"
+  depends_on                   = [azurerm_container_app_environment.env]
 
   identity {
     type = "SystemAssigned"
@@ -423,6 +425,7 @@ resource "azurerm_role_assignment" "delivery_app_acr_pull" {
   principal_id         = azurerm_container_app.delivery_service.identity[0].principal_id
   depends_on           = [azurerm_container_app.delivery_service]
 }
+
 
 # Set Key Vault Access Policies for each Container App's Managed Identity
 resource "azurerm_key_vault_access_policy" "ingestion_kv_policy" {
