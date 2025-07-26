@@ -132,7 +132,21 @@ resource "azurerm_container_app_environment" "env" {
   location                   = var.location
   resource_group_name        = var.resource_group_name
   log_analytics_workspace_id = azurerm_log_analytics_workspace.logs.id # Now reference the local logs resource
+
+  # REMOVED: The identity block here as it's not supported for azurerm_container_app_environment
+  # identity {
+  #   type = "SystemAssigned"
+  # }
 }
+
+# Data source to fetch the ACR details for role assignment
+data "azurerm_container_registry" "acr" {
+  name                = split(".", var.acr_login_server)[0] # Extract ACR name from the login server URL
+  resource_group_name = var.resource_group_name             # Assuming ACR is in the same resource group as other apps resources
+}
+
+# REMOVED: azurerm_role_assignment.aca_env_acr_pull as the environment identity is not used for this.
+# Instead, each app's identity will be granted permissions.
 
 # Ingestion Service Container App
 resource "azurerm_container_app" "ingestion_service" {
@@ -150,7 +164,7 @@ resource "azurerm_container_app" "ingestion_service" {
       name   = "ingestion-container"
       image  = var.ingestion_image
       cpu    = 0.5
-      memory = "1.0Gi"
+      memory = "1Gi" # CORRECTED: Changed from "1.0Gi" to "1Gi"
       env {
         name  = "SERVICEBUS_CONNECTION_STRING"
         value = azurerm_servicebus_namespace.sb_namespace.default_primary_connection_string # Reference local Service Bus
@@ -183,6 +197,15 @@ resource "azurerm_container_app" "ingestion_service" {
   }
 }
 
+# ADDED: Grant Ingestion Service Container App's Managed Identity AcrPull permission
+resource "azurerm_role_assignment" "ingestion_app_acr_pull" {
+  scope                = data.azurerm_container_registry.acr.id
+  role_definition_name = "AcrPull"
+  principal_id         = azurerm_container_app.ingestion_service.identity[0].principal_id
+  depends_on           = [azurerm_container_app.ingestion_service]
+}
+
+
 # Workflow Service Container App
 resource "azurerm_container_app" "workflow_service" {
   name                         = "workflow-service-${var.resource_group_name_prefix}"
@@ -199,7 +222,7 @@ resource "azurerm_container_app" "workflow_service" {
       name   = "workflow-container"
       image  = var.workflow_image
       cpu    = 0.5
-      memory = "1.0Gi"
+      memory = "1Gi" # CORRECTED: Changed from "1.0Gi" to "1Gi"
       env {
         name  = "SERVICEBUS_CONNECTION_STRING"
         value = azurerm_servicebus_namespace.sb_namespace.default_primary_connection_string
@@ -230,6 +253,14 @@ resource "azurerm_container_app" "workflow_service" {
       latest_revision = true
     }
   }
+}
+
+# ADDED: Grant Workflow Service Container App's Managed Identity AcrPull permission
+resource "azurerm_role_assignment" "workflow_app_acr_pull" {
+  scope                = data.azurerm_container_registry.acr.id
+  role_definition_name = "AcrPull"
+  principal_id         = azurerm_container_app.workflow_service.identity[0].principal_id
+  depends_on           = [azurerm_container_app.workflow_service]
 }
 
 # Package Service Container App
@@ -277,6 +308,15 @@ resource "azurerm_container_app" "package_service" {
   }
 }
 
+# ADDED: Grant Package Service Container App's Managed Identity AcrPull permission
+resource "azurerm_role_assignment" "package_app_acr_pull" {
+  scope                = data.azurerm_container_registry.acr.id
+  role_definition_name = "AcrPull"
+  principal_id         = azurerm_container_app.package_service.identity[0].principal_id
+  depends_on           = [azurerm_container_app.package_service]
+}
+
+
 # Drone Scheduler Service Container App
 resource "azurerm_container_app" "drone_scheduler_service" {
   name                         = "drone-scheduler-service-${var.resource_group_name_prefix}"
@@ -322,6 +362,15 @@ resource "azurerm_container_app" "drone_scheduler_service" {
   }
 }
 
+# ADDED: Grant Drone Scheduler Service Container App's Managed Identity AcrPull permission
+resource "azurerm_role_assignment" "drone_scheduler_app_acr_pull" {
+  scope                = data.azurerm_container_registry.acr.id
+  role_definition_name = "AcrPull"
+  principal_id         = azurerm_container_app.drone_scheduler_service.identity[0].principal_id
+  depends_on           = [azurerm_container_app.drone_scheduler_service]
+}
+
+
 # Delivery Service Container App
 resource "azurerm_container_app" "delivery_service" {
   name                         = "delivery-service-${var.resource_group_name_prefix}"
@@ -365,6 +414,14 @@ resource "azurerm_container_app" "delivery_service" {
       latest_revision = true
     }
   }
+}
+
+# ADDED: Grant Delivery Service Container App's Managed Identity AcrPull permission
+resource "azurerm_role_assignment" "delivery_app_acr_pull" {
+  scope                = data.azurerm_container_registry.acr.id
+  role_definition_name = "AcrPull"
+  principal_id         = azurerm_container_app.delivery_service.identity[0].principal_id
+  depends_on           = [azurerm_container_app.delivery_service]
 }
 
 # Set Key Vault Access Policies for each Container App's Managed Identity

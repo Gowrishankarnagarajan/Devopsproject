@@ -38,8 +38,8 @@ jobs:
       - name: Terraform Init (Infra)
         run: terraform -chdir=terraform/infra init
 
-      - name: Terraform Plan (Infra)
-        run: terraform -chdir=terraform/infra plan -out=infra.tfplan
+      # - name: Terraform Plan (Infra)
+      #   run: terraform -chdir=terraform/infra plan -out=infra.tfplan
 
       - name: Terraform Apply (Infra)
         run: terraform -chdir=terraform/infra apply -auto-approve infra.tfplan
