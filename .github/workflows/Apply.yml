@@ -119,35 +119,35 @@ jobs:
       - name: Build and Push Ingestion Image
         id: ingestion_image
         run: |
-          docker build -t ${{ needs.provision-infra.outputs.acr_login_server }}/ingestion-service:${{ env.IMAGE_TAG }} ./src/ingestion-service
+          docker build -t ${{ needs.provision-infra.outputs.acr_login_server }}/ingestion-service:${{ env.IMAGE_TAG }} ./src/ingestion
           docker push ${{ needs.provision-infra.outputs.acr_login_server }}/ingestion-service:${{ env.IMAGE_TAG }}
           echo "image=${{ needs.provision-infra.outputs.acr_login_server }}/ingestion-service:${{ env.IMAGE_TAG }}" >> "$GITHUB_OUTPUT"
 
       - name: Build and Push Workflow Image
         id: workflow_image
         run: |
-          docker build -t ${{ needs.provision-infra.outputs.acr_login_server }}/workflow-service:${{ env.IMAGE_TAG }} ./src/workflow-service
+          docker build -t ${{ needs.provision-infra.outputs.acr_login_server }}/workflow-service:${{ env.IMAGE_TAG }} ./src/workflow
           docker push ${{ needs.provision-infra.outputs.acr_login_server }}/workflow-service:${{ env.IMAGE_TAG }}
           echo "image=${{ needs.provision-infra.outputs.acr_login_server }}/workflow-service:${{ env.IMAGE_TAG }}" >> "$GITHUB_OUTPUT"
 
       - name: Build and Push Package Image
         id: package_image
         run: |
-          docker build -t ${{ needs.provision-infra.outputs.acr_login_server }}/package-service:${{ env.IMAGE_TAG }} ./src/package-service
+          docker build -t ${{ needs.provision-infra.outputs.acr_login_server }}/package-service:${{ env.IMAGE_TAG }} ./src/package
           docker push ${{ needs.provision-infra.outputs.acr_login_server }}/package-service:${{ env.IMAGE_TAG }}
           echo "image=${{ needs.provision-infra.outputs.acr_login_server }}/package-service:${{ env.IMAGE_TAG }}" >> "$GITHUB_OUTPUT"
 
       - name: Build and Push Drone Scheduler Image
         id: drone_scheduler_image
         run: |
-          docker build -t ${{ needs.provision-infra.outputs.acr_login_server }}/drone-scheduler-service:${{ env.IMAGE_TAG }} ./src/drone-scheduler-service
+          docker build -t ${{ needs.provision-infra.outputs.acr_login_server }}/drone-scheduler-service:${{ env.IMAGE_TAG }} ./src/drone-scheduler
           docker push ${{ needs.provision-infra.outputs.acr_login_server }}/drone-scheduler-service:${{ env.IMAGE_TAG }}
           echo "image=${{ needs.provision-infra.outputs.acr_login_server }}/drone-scheduler-service:${{ env.IMAGE_TAG }}" >> "$GITHUB_OUTPUT"
 
       - name: Build and Push Delivery Image
         id: delivery_image
         run: |
-          docker build -t ${{ needs.provision-infra.outputs.acr_login_server }}/delivery-service:${{ env.IMAGE_TAG }} ./src/delivery-service
+          docker build -t ${{ needs.provision-infra.outputs.acr_login_server }}/delivery-service:${{ env.IMAGE_TAG }} ./src/delivery
           docker push ${{ needs.provision-infra.outputs.acr_login_server }}/delivery-service:${{ env.IMAGE_TAG }}
           echo "image=${{ needs.provision-infra.outputs.acr_login_server }}/delivery-service:${{ env.IMAGE_TAG }}" >> "$GITHUB_OUTPUT"
 
