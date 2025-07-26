@@ -172,44 +172,26 @@ jobs:
           printf "key_vault_uri=%s\n" "$KEY_VAULT_URI" >> "$GITHUB_OUTPUT"
 
       - name: Get Key Vault ID
-        id: keyvault_id_output # New step to get Key Vault ID
+        id: keyvault_id_output
         run: |
           set -euo pipefail
-          # Assuming 'key_vault_id' is an output from your terraform/infra
+          # Debugging: Print the raw output for Key Vault ID
           RAW_KEY_VAULT_ID=$(terraform -chdir=terraform/infra output -raw key_vault_id 2>&1)
           echo "::debug::Raw Key Vault ID Output: '$RAW_KEY_VAULT_ID'"
           KEY_VAULT_ID=$(echo "$RAW_KEY_VAULT_ID" | head -n 1 | tr -d '\r')
           echo "::debug::Extracted Key Vault ID: '$KEY_VAULT_ID'"
           printf "key_vault_id=%s\n" "$KEY_VAULT_ID" >> "$GITHUB_OUTPUT"
-      # --- End Output Retrieval Steps ---
-
-      - name: Debug Provisioning Outputs
-        run: |
-          echo "::notice::ACR Login Server: ${{ steps.acr_output.outputs.acr_login_server }}"
-          echo "::notice::Log Analytics Workspace ID: ${{ steps.logs_output.outputs.log_analytics_workspace_id }}"
-          echo "::notice::Resource Group Name: ${{ steps.rg_output.outputs.resource_group_name }}"
-          echo "::notice::Location: ${{ steps.location_output.outputs.location }}"
-          echo "::notice::Service Bus Namespace Name: ${{ steps.servicebus_output.outputs.servicebus_namespace_name }}"
-          echo "::notice::Service Bus Connection String: ${{ steps.servicebus_output.outputs.servicebus_connection_string }}"
-          echo "::notice::Cosmos DB MongoDB Connection String: ${{ steps.cosmosdb_mongodb_output.outputs.cosmosdb_mongodb_connection_string }}"
-          echo "::notice::Cosmos DB Workflow Connection String: ${{ steps.cosmosdb_workflow_output.outputs.cosmosdb_workflow_connection_string }}"
-          echo "::notice::Redis Connection String: ${{ steps.redis_output.outputs.redis_connection_string }}"
-          echo "::notice::Application Insights Connection String: ${{ steps.appinsights_output.outputs.application_insights_connection_string }}"
-          echo "::notice::Key Vault URI: ${{ steps.keyvault_output.outputs.key_vault_uri }}"
-          echo "::notice::Key Vault ID: ${{ steps.keyvault_id_output.outputs.key_vault_id }}" # Debugging for new output
-
 
   build-and-push-images:
-    name: Build & Push Docker Images
+    name: Build and Push Container Images
     runs-on: ubuntu-latest
     needs: provision-infra
-
     outputs:
-      ingestion_image: ${{ steps.push_ingestion.outputs.image_name }}
-      workflow_image: ${{ steps.push_workflow.outputs.image_name }}
-      package_image: ${{ steps.push_package.outputs.image_name }}
-      drone_scheduler_image: ${{ steps.push_drone_scheduler.outputs.image_name }}
-      delivery_image: ${{ steps.push_delivery.outputs.image_name }}
+      ingestion_image: ${{ steps.set_ingestion_image.outputs.image_name }}
+      workflow_image: ${{ steps.set_workflow_image.outputs.image_name }}
+      package_image: ${{ steps.set_package_image.outputs.image_name }}
+      drone_scheduler_image: ${{ steps.set_drone_scheduler_image.outputs.image_name }}
+      delivery_image: ${{ steps.set_delivery_image.outputs.image_name }}
 
     steps:
       - name: Checkout Code
@@ -220,102 +202,52 @@ jobs:
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      - name: Set ACR Variable
-        # Simplified setting of ACR_LOGIN_SERVER into an environment variable
-        run: echo "ACR_LOGIN_SERVER=${{ needs.provision-infra.outputs.acr_login_server }}" >> "$GITHUB_ENV"
-
       - name: Docker Login to ACR
-        run: |
-          set -euo pipefail
-          ACR_NAME=$(echo "$ACR_LOGIN_SERVER" | cut -d. -f1)
-          az acr login --name "$ACR_NAME"
+        uses: azure/docker-login@v1
+        with:
+          login-server: ${{ needs.provision-infra.outputs.acr_login_server }}
+          username: ${{ secrets.AZURE_CONTAINER_REGISTRY_USERNAME }}
+          password: ${{ secrets.AZURE_CONTAINER_REGISTRY_PASSWORD }}
 
-      # --- Build & Push Steps for Each Microservice ---
-      - name: Build & Push Ingestion Image
-        id: push_ingestion
+      - name: Build and Push Ingestion Image
         run: |
-          set -euo pipefail
-          # Debugging: List contents of sourcecode directory to verify Dockerfile path
-          echo "::debug::Listing contents of ./sourcecode/ingestion/:"
-          ls -R ./sourcecode/ingestion/ || true # Use || true to prevent step failure if directory is empty or path is wrong initially
-          
-          IMAGE_NAME="${{ env.ACR_LOGIN_SERVER }}/ingestion:latest"
-          if [ ! -f "./sourcecode/ingestion/Dockerfile" ]; then
-            echo "::error::Dockerfile not found for ingestion at: ./sourcecode/ingestion/Dockerfile. Please check your repository structure."
-            exit 1
-          fi
-          docker build -t "$IMAGE_NAME" -f ./sourcecode/ingestion/Dockerfile ./sourcecode/ingestion
-          docker push "$IMAGE_NAME"
-          echo "image_name=$IMAGE_NAME" >> "$GITHUB_OUTPUT"
+          docker build -t ${{ needs.provision-infra.outputs.acr_login_server }}/ingestion-service:${{ github.sha }} ./src/Ingestion
+          docker push ${{ needs.provision-infra.outputs.acr_login_server }}/ingestion-service:${{ github.sha }}
+      - name: Set Ingestion Image Output
+        id: set_ingestion_image
+        run: echo "image_name=${{ needs.provision-infra.outputs.acr_login_server }}/ingestion-service:${{ github.sha }}" >> "$GITHUB_OUTPUT"
 
-      - name: Build & Push Workflow Image
-        id: push_workflow
+      - name: Build and Push Workflow Image
         run: |
-          set -euo pipefail
-          # Debugging: List contents of sourcecode directory to verify Dockerfile path
-          echo "::debug::Listing contents of ./sourcecode/workflow/:"
-          ls -R ./sourcecode/workflow/ || true # Use || true to prevent step failure if directory is empty or path is wrong initially
-          
-          IMAGE_NAME="${{ env.ACR_LOGIN_SERVER }}/workflow:latest"
-          if [ ! -f "./sourcecode/workflow/Dockerfile" ]; then
-            echo "::error::Dockerfile not found for workflow at: ./sourcecode/workflow/Dockerfile. Please check your repository structure."
-            exit 1
-          fi
-          docker build -t "$IMAGE_NAME" -f ./sourcecode/workflow/Dockerfile ./sourcecode/workflow
-          docker push "$IMAGE_NAME"
-          echo "image_name=$IMAGE_NAME" >> "$GITHUB_OUTPUT"
+          docker build -t ${{ needs.provision-infra.outputs.acr_login_server }}/workflow-service:${{ github.sha }} ./src/Workflow
+          docker push ${{ needs.provision-infra.outputs.acr_login_server }}/workflow-service:${{ github.sha }}
+      - name: Set Workflow Image Output
+        id: set_workflow_image
+        run: echo "image_name=${{ needs.provision-infra.outputs.acr_login_server }}/workflow-service:${{ github.sha }}" >> "$GITHUB_OUTPUT"
 
-      - name: Build & Push Package Image
-        id: push_package
+      - name: Build and Push Package Image
         run: |
-          set -euo pipefail
-          # Debugging: List contents of sourcecode directory to verify Dockerfile path
-          echo "::debug::Listing contents of ./sourcecode/package/:"
-          ls -R ./sourcecode/package/ || true # Use || true to prevent step failure if directory is empty or path is wrong initially
-          
-          IMAGE_NAME="${{ env.ACR_LOGIN_SERVER }}/package:latest"
-          if [ ! -f "./sourcecode/package/Dockerfile" ]; then
-            echo "::error::Dockerfile not found for package at: ./sourcecode/package/Dockerfile. Please check your repository structure."
-            exit 1
-          fi
-          docker build -t "$IMAGE_NAME" -f ./sourcecode/package/Dockerfile ./sourcecode/package
-          docker push "$IMAGE_NAME"
-          echo "image_name=$IMAGE_NAME" >> "$GITHUB_OUTPUT"
+          docker build -t ${{ needs.provision-infra.outputs.acr_login_server }}/package-service:${{ github.sha }} ./src/Package
+          docker push ${{ needs.provision-infra.outputs.acr_login_server }}/package-service:${{ github.sha }}
+      - name: Set Package Image Output
+        id: set_package_image
+        run: echo "image_name=${{ needs.provision-infra.outputs.acr_login_server }}/package-service:${{ github.sha }}" >> "$GITHUB_OUTPUT"
 
-      - name: Build & Push Drone Scheduler Image
-        id: push_drone_scheduler
+      - name: Build and Push Drone Scheduler Image
         run: |
-          set -euo pipefail
-          # Debugging: List contents of sourcecode directory to verify Dockerfile path
-          echo "::debug::Listing contents of ./sourcecode/drone-scheduler/:"
-          ls -R ./sourcecode/drone-scheduler/ || true # Use || true to prevent step failure if directory is empty or path is wrong initially
-          
-          IMAGE_NAME="${{ env.ACR_LOGIN_SERVER }}/drone-scheduler:latest"
-          if [ ! -f "./sourcecode/drone-scheduler/Dockerfile" ]; then
-            echo "::error::Dockerfile not found for drone-scheduler at: ./sourcecode/drone-scheduler/Dockerfile. Please check your repository structure."
-            exit 1
-          fi
-          docker build -t "$IMAGE_NAME" -f ./sourcecode/drone-scheduler/Dockerfile ./sourcecode/drone-scheduler
-          docker push "$IMAGE_NAME"
-          echo "image_name=$IMAGE_NAME" >> "$GITHUB_OUTPUT"
+          docker build -t ${{ needs.provision-infra.outputs.acr_login_server }}/drone-scheduler-service:${{ github.sha }} ./src/DroneScheduler
+          docker push ${{ needs.provision-infra.outputs.acr_login_server }}/drone-scheduler-service:${{ github.sha }}
+      - name: Set Drone Scheduler Image Output
+        id: set_drone_scheduler_image
+        run: echo "image_name=${{ needs.provision-infra.outputs.acr_login_server }}/drone-scheduler-service:${{ github.sha }}" >> "$GITHUB_OUTPUT"
 
-      - name: Build & Push Delivery Image
-        id: push_delivery
+      - name: Build and Push Delivery Image
         run: |
-          set -euo pipefail
-          # Debugging: List contents of sourcecode directory to verify Dockerfile path
-          echo "::debug::Listing contents of ./sourcecode/delivery/:"
-          ls -R ./sourcecode/delivery/ || true # Use || true to prevent step failure if directory is empty or path is wrong initially
-          
-          IMAGE_NAME="${{ env.ACR_LOGIN_SERVER }}/delivery:latest"
-          if [ ! -f "./sourcecode/delivery/Dockerfile" ]; then
-            echo "::error::Dockerfile not found for delivery at: ./sourcecode/delivery/Dockerfile. Please check your repository structure."
-            exit 1
-          fi
-          docker build -t "$IMAGE_NAME" -f ./sourcecode/delivery/Dockerfile ./sourcecode/delivery
-          docker push "$IMAGE_NAME"
-          echo "image_name=$IMAGE_NAME" >> "$GITHUB_OUTPUT"
-      # --- End Build & Push Steps ---
+          docker build -t ${{ needs.provision-infra.outputs.acr_login_server }}/delivery-service:${{ github.sha }} ./src/Delivery
+          docker push ${{ needs.provision-infra.outputs.acr_login_server }}/delivery-service:${{ github.sha }}
+      - name: Set Delivery Image Output
+        id: set_delivery_image
+        run: echo "image_name=${{ needs.provision-infra.outputs.acr_login_server }}/delivery-service:${{ github.sha }}" >> "$GITHUB_OUTPUT"
 
   deploy-apps:
     name: Deploy Container Apps
@@ -334,45 +266,29 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v2
         with:
-          terraform_version: 1.7.2 # Pinning Terraform version as suggested by Copilot
+          terraform_version: 1.7.2 # Pinning Terraform version
 
-      - name: Terraform Init & Apply (Apps)
+      - name: Terraform Init (Apps)
+        run: terraform -chdir=terraform/apps init
+
+      - name: Set Resource Group Prefix for Apps
+        id: set_rg_prefix
         run: |
-          set -euxo pipefail
-          # Correctly assign RG_NAME and RG_NAME_PREFIX from job outputs
-          # These variables should directly reference the outputs from the previous job
+          set -euo pipefail
+          # Derive the resource_group_name_prefix from the provisioned resource_group_name
           RG_NAME="${{ needs.provision-infra.outputs.resource_group_name }}"
-          # Added robustness to sed command for RG_NAME_PREFIX
-          RG_NAME_PREFIX=$(echo "$RG_NAME" | sed -E 's/^aca-rg-//' || echo "$RG_NAME")
-          
-          # Debugging: Print all variables before Terraform Apply
-          echo "::debug::Applying Terraform with the following variables:"
-          echo "::debug::acr_login_server: ${{ needs.provision-infra.outputs.acr_login_server }}"
-          echo "::debug::log_analytics_workspace_id: ${{ needs.provision-infra.outputs.log_analytics_workspace_id }}"
-          echo "::debug::resource_group_name: ${{ needs.provision-infra.outputs.resource_group_name }}"
-          echo "::debug::location: ${{ needs.provision-infra.outputs.location }}"
-          echo "::debug::resource_group_name_prefix: $RG_NAME_PREFIX"
-          echo "::debug::servicebus_namespace_name: ${{ needs.provision-infra.outputs.servicebus_namespace_name }}"
-          echo "::debug::servicebus_connection_string: ${{ needs.provision-infra.outputs.servicebus_connection_string }}"
-          echo "::debug::cosmosdb_mongodb_connection_string: ${{ needs.provision-infra.outputs.cosmosdb_mongodb_connection_string }}"
-          echo "::debug::cosmosdb_workflow_connection_string: ${{ needs.provision-infra.outputs.cosmosdb_workflow_connection_string }}" # Corrected source
-          echo "::debug::redis_connection_string: ${{ needs.provision-infra.outputs.redis_connection_string }}"
-          echo "::debug::application_insights_connection_string: ${{ needs.provision-infra.outputs.application_insights_connection_string }}"
-          echo "::debug::key_vault_uri: ${{ needs.provision-infra.outputs.key_vault_uri }}"
-          echo "::debug::key_vault_id: ${{ needs.provision-infra.outputs.key_vault_id }}" # Correctly passing key_vault_id
-          echo "::debug::ingestion_image: ${{ needs.build-and-push-images.outputs.ingestion_image }}"
-          echo "::debug::workflow_image: ${{ needs.build-and-push-images.outputs.workflow_image }}"
-          echo "::debug::package_image: ${{ needs.build-and-push-images.outputs.package_image }}"
-          echo "::debug::drone_scheduler_image: ${{ needs.build-and-push-images.outputs.drone_scheduler_image }}"
-          echo "::debug::delivery_image: ${{ needs.build-and-push-images.outputs.delivery_image }}"
+          RG_NAME_PREFIX=$(echo "$RG_NAME" | sed -E 's/^aca-rg-//')
+          printf "resource_group_name_prefix=%s\n" "$RG_NAME_PREFIX" >> "$GITHUB_OUTPUT"
 
-          terraform -chdir=terraform/apps init
+      - name: Terraform Apply (Apps)
+        run: |
+          set -euo pipefail # Kept for robustness
           terraform -chdir=terraform/apps apply -auto-approve \
-            -var="acr_login_server=${{ needs.provision-infra.outputs.acr_login_server }}" \
-            -var="log_analytics_workspace_id=${{ needs.provision-infra.outputs.log_analytics_workspace_id }}" \
-            -var="resource_group_name=${{ needs.provision-infra.outputs.resource_group_name }}" \
             -var="location=${{ needs.provision-infra.outputs.location }}" \
-            -var="resource_group_name_prefix=$RG_NAME_PREFIX" \
+            -var="resource_group_name=${{ needs.provision-infra.outputs.resource_group_name }}" \
+            -var="resource_group_name_prefix=${{ steps.set_rg_prefix.outputs.resource_group_name_prefix }}" \
+            -var="log_analytics_workspace_id=${{ needs.provision-infra.outputs.log_analytics_workspace_id }}" \
+            -var="acr_login_server=${{ needs.provision-infra.outputs.acr_login_server }}" \
             -var="servicebus_namespace_name=${{ needs.provision-infra.outputs.servicebus_namespace_name }}" \
             -var="servicebus_connection_string=${{ needs.provision-infra.outputs.servicebus_connection_string }}" \
             -var="cosmosdb_mongodb_connection_string=${{ needs.provision-infra.outputs.cosmosdb_mongodb_connection_string }}" \
@@ -390,5 +306,5 @@ jobs:
       - name: Get Ingestion App FQDN
         run: |
           set -euo pipefail # Kept for robustness
-          INGESTION_FQDN=$(terraform -chdir=terraform/apps output -raw ingestion_fqdn 2>&1) # Added 2>&1 for consistent error capture
-          echo "::notice::Ingestion App URL: $INGESTION_FQDN"
+          INGESTION_FQDN=$(terraform -chdir=terraform/apps output -raw ingestion_fqdn)
+          echo "Ingestion App FQDN: $INGESTION_FQDN"
