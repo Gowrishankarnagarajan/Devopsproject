@@ -12,9 +12,9 @@ resource "random_string" "suffix" {
 # are now moved here:
 
 resource "azurerm_log_analytics_workspace" "logs" {
-  name                = "aca-logs-${random_string.suffix.result}"
+  name                = "acalogs${random_string.suffix.result}"
   location            = var.location
-  resource_group_name = var.resource_group_name # Use the passed-in resource group
+  resource_group_name = var.resource_group_name
   sku                 = "PerGB2018"
   retention_in_days   = 30
   lifecycle {
@@ -23,7 +23,7 @@ resource "azurerm_log_analytics_workspace" "logs" {
 }
 
 resource "azurerm_servicebus_namespace" "sb_namespace" {
-  name                = "acasbns-${random_string.suffix.result}"
+  name                = "acasbns${random_string.suffix.result}"
   location            = var.location
   resource_group_name = var.resource_group_name
   sku                 = "Standard"
@@ -74,7 +74,7 @@ resource "azurerm_cosmosdb_account" "cosmosdb_workflow" {
 }
 
 resource "azurerm_redis_cache" "redis_cache" {
-  name                = "acaredis-${random_string.suffix.result}"
+  name                = "acaredis${random_string.suffix.result}"
   location            = var.location
   resource_group_name = var.resource_group_name
   capacity            = 1
@@ -84,7 +84,7 @@ resource "azurerm_redis_cache" "redis_cache" {
 }
 
 resource "azurerm_application_insights" "app_insights" {
-  name                = "aca-appinsights-${random_string.suffix.result}"
+  name                = "acaappinsights${random_string.suffix.result}"
   location            = var.location
   resource_group_name = var.resource_group_name
   application_type    = "web"
@@ -126,24 +126,19 @@ resource "azurerm_key_vault_secret" "example_secret" {
   ]
 }
 
-# Existing Container Apps environment and services (no changes needed for these blocks themselves)
 resource "azurerm_container_app_environment" "env" {
-  name                       = "aca-env-${var.resource_group_name_prefix}"
-  location                   = var.location
-  resource_group_name        = var.resource_group_name
-  log_analytics_workspace_id = azurerm_log_analytics_workspace.logs.id # Now reference the local logs resource
-  depends_on                 = [azurerm_log_analytics_workspace.logs]
+  name                         = "acaenv${random_string.suffix.result}"
+  location                     = var.location
+  resource_group_name          = var.resource_group_name
+  log_analytics_workspace_id   = azurerm_log_analytics_workspace.logs.id
+  depends_on                   = [azurerm_log_analytics_workspace.logs]
 }
 
 # Data source to fetch the ACR details for role assignment
 data "azurerm_container_registry" "acr" {
-  name                = split(".", var.acr_login_server)[0] # Extract ACR name from the login server URL
+  name                = split(".", var.acr_login_server)[0]
   resource_group_name = var.resource_group_name
-
 }
-
-# REMOVED: azurerm_role_assignment.aca_env_acr_pull as the environment identity is not used for this.
-# Instead, each app's identity will be granted permissions.
 
 # Ingestion Service Container App
 resource "azurerm_container_app" "ingestion_service" {
@@ -162,22 +157,22 @@ resource "azurerm_container_app" "ingestion_service" {
       name   = "ingestion-container"
       image  = var.ingestion_image
       cpu    = 0.5
-      memory = "1Gi" # CORRECTED: Changed from "1.0Gi" to "1Gi"
+      memory = "1Gi"
       env {
         name  = "SERVICEBUS_CONNECTION_STRING"
-        value = azurerm_servicebus_namespace.sb_namespace.default_primary_connection_string # Reference local Service Bus
+        value = azurerm_servicebus_namespace.sb_namespace.default_primary_connection_string
       }
       env {
         name  = "COSMOSDB_MONGODB_CONNECTION_STRING"
-        value = azurerm_cosmosdb_account.cosmosdb_mongodb.connection_strings[0] # Reference local CosmosDB
+        value = azurerm_cosmosdb_account.cosmosdb_mongodb.connection_strings[0]
       }
       env {
         name  = "APPLICATIONINSIGHTS_CONNECTION_STRING"
-        value = azurerm_application_insights.app_insights.connection_string # Reference local App Insights
+        value = azurerm_application_insights.app_insights.connection_string
       }
       env {
         name  = "KEY_VAULT_URI"
-        value = azurerm_key_vault.key_vault.vault_uri # Reference local Key Vault
+        value = azurerm_key_vault.key_vault.vault_uri
       }
     }
     min_replicas = 1
@@ -195,7 +190,7 @@ resource "azurerm_container_app" "ingestion_service" {
   }
 }
 
-# ADDED: Grant Ingestion Service Container App's Managed Identity AcrPull permission
+# Grant Ingestion Service Container App's Managed Identity AcrPull permission
 resource "azurerm_role_assignment" "ingestion_app_acr_pull" {
   scope                = data.azurerm_container_registry.acr.id
   role_definition_name = "AcrPull"
@@ -221,7 +216,7 @@ resource "azurerm_container_app" "workflow_service" {
       name   = "workflow-container"
       image  = var.workflow_image
       cpu    = 0.5
-      memory = "1Gi" # CORRECTED: Changed from "1.0Gi" to "1Gi"
+      memory = "1Gi"
       env {
         name  = "SERVICEBUS_CONNECTION_STRING"
         value = azurerm_servicebus_namespace.sb_namespace.default_primary_connection_string
@@ -254,7 +249,7 @@ resource "azurerm_container_app" "workflow_service" {
   }
 }
 
-# ADDED: Grant Workflow Service Container App's Managed Identity AcrPull permission
+# Grant Workflow Service Container App's Managed Identity AcrPull permission
 resource "azurerm_role_assignment" "workflow_app_acr_pull" {
   scope                = data.azurerm_container_registry.acr.id
   role_definition_name = "AcrPull"
@@ -308,7 +303,7 @@ resource "azurerm_container_app" "package_service" {
   }
 }
 
-# ADDED: Grant Package Service Container App's Managed Identity AcrPull permission
+# Grant Package Service Container App's Managed Identity AcrPull permission
 resource "azurerm_role_assignment" "package_app_acr_pull" {
   scope                = data.azurerm_container_registry.acr.id
   role_definition_name = "AcrPull"
@@ -363,7 +358,7 @@ resource "azurerm_container_app" "drone_scheduler_service" {
   }
 }
 
-# ADDED: Grant Drone Scheduler Service Container App's Managed Identity AcrPull permission
+# Grant Drone Scheduler Service Container App's Managed Identity AcrPull permission
 resource "azurerm_role_assignment" "drone_scheduler_app_acr_pull" {
   scope                = data.azurerm_container_registry.acr.id
   role_definition_name = "AcrPull"
@@ -418,7 +413,7 @@ resource "azurerm_container_app" "delivery_service" {
   }
 }
 
-# ADDED: Grant Delivery Service Container App's Managed Identity AcrPull permission
+# Grant Delivery Service Container App's Managed Identity AcrPull permission
 resource "azurerm_role_assignment" "delivery_app_acr_pull" {
   scope                = data.azurerm_container_registry.acr.id
   role_definition_name = "AcrPull"
@@ -429,7 +424,7 @@ resource "azurerm_role_assignment" "delivery_app_acr_pull" {
 
 # Set Key Vault Access Policies for each Container App's Managed Identity
 resource "azurerm_key_vault_access_policy" "ingestion_kv_policy" {
-  key_vault_id = azurerm_key_vault.key_vault.id # Reference local Key Vault
+  key_vault_id = azurerm_key_vault.key_vault.id
   tenant_id    = azurerm_container_app.ingestion_service.identity[0].tenant_id
   object_id    = azurerm_container_app.ingestion_service.identity[0].principal_id
 
@@ -442,7 +437,7 @@ resource "azurerm_key_vault_access_policy" "ingestion_kv_policy" {
 }
 
 resource "azurerm_key_vault_access_policy" "workflow_kv_policy" {
-  key_vault_id = azurerm_key_vault.key_vault.id # Reference local Key Vault
+  key_vault_id = azurerm_key_vault.key_vault.id
   tenant_id    = azurerm_container_app.workflow_service.identity[0].tenant_id
   object_id    = azurerm_container_app.workflow_service.identity[0].principal_id
 
@@ -455,7 +450,7 @@ resource "azurerm_key_vault_access_policy" "workflow_kv_policy" {
 }
 
 resource "azurerm_key_vault_access_policy" "package_kv_policy" {
-  key_vault_id = azurerm_key_vault.key_vault.id # Reference local Key Vault
+  key_vault_id = azurerm_key_vault.key_vault.id
   tenant_id    = azurerm_container_app.package_service.identity[0].tenant_id
   object_id    = azurerm_container_app.package_service.identity[0].principal_id
 
@@ -468,7 +463,7 @@ resource "azurerm_key_vault_access_policy" "package_kv_policy" {
 }
 
 resource "azurerm_key_vault_access_policy" "drone_scheduler_kv_policy" {
-  key_vault_id = azurerm_key_vault.key_vault.id # Reference local Key Vault
+  key_vault_id = azurerm_key_vault.key_vault.id
   tenant_id    = azurerm_container_app.drone_scheduler_service.identity[0].tenant_id
   object_id    = azurerm_container_app.drone_scheduler_service.identity[0].principal_id
 
@@ -481,7 +476,7 @@ resource "azurerm_key_vault_access_policy" "drone_scheduler_kv_policy" {
 }
 
 resource "azurerm_key_vault_access_policy" "delivery_kv_policy" {
-  key_vault_id = azurerm_key_vault.key_vault.id # Reference local Key Vault
+  key_vault_id = azurerm_key_vault.key_vault.id
   tenant_id    = azurerm_container_app.delivery_service.identity[0].tenant_id
   object_id    = azurerm_container_app.delivery_service.identity[0].principal_id
 
