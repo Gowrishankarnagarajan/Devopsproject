@@ -90,6 +90,7 @@ variable "drone_scheduler_image" {
   type        = string
 }
 
+#variable
 variable "delivery_image" {
   description = "The full Docker image name for the Delivery service."
   type        = string

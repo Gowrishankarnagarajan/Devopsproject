@@ -308,3 +308,4 @@ jobs:
           set -euo pipefail # Kept for robustness
           INGESTION_FQDN=$(terraform -chdir=terraform/apps output -raw ingestion_fqdn)
           echo "Ingestion App FQDN: $INGESTION_FQDN"
+          
